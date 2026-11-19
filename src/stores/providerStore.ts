@@ -3,7 +3,6 @@ import { ProviderManifest, ProviderSource } from '../lib/providers/types';
 import {
   ProviderEngine,
   ZENDA_SOURCE_URL,
-  MANIMANJAR_SOURCE_URL,
   normalizeSourceUrl,
 } from '../lib/providers/providerEngine';
 import { useSettingsStore } from './settingsStore';
@@ -25,25 +24,31 @@ export interface ProviderStoreState {
   setActiveSource: (id: string) => Promise<void>;
 }
 
-const SOURCES_STORAGE_KEY = 'vega_provider_sources_v5';
+const SOURCES_STORAGE_KEY = 'vega_provider_sources_v6';
 
 export const DEFAULT_SOURCES: ProviderSource[] = [
   {
     id: 'zenda-official',
-    name: 'Vega Movies & Series (Official)',
+    name: 'Vega Movies & Series (Official Zenda)',
     url: ZENDA_SOURCE_URL,
-    enabled: true,
-  },
-  {
-    id: 'custom-vega',
-    name: 'Vega Providers (Manimanjar)',
-    url: MANIMANJAR_SOURCE_URL,
     enabled: true,
   },
 ];
 
 // Fallback manifests available instantly offline
+const DISALLOWED_PROVIDERS = new Set(['xvideos', 'pornhub', 'rule34video']);
+
+// Fallback manifests available instantly offline (Strictly Official Zenda Providers)
 const FALLBACK_MANIFESTS: ProviderManifest[] = [
+  {
+    display_name: 'MultiStream',
+    value: 'autoEmbed',
+    version: '3.7',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
   {
     display_name: 'VMovies',
     value: 'vega',
@@ -58,15 +63,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     value: 'drive',
     version: '2.30',
     icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'MultiStream',
-    value: 'autoEmbed',
-    version: '3.7',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -90,37 +86,37 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'World4uFree',
-    value: 'world4u',
+    display_name: 'MoviesMod',
+    value: 'mod',
     version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/world4u.png',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/mod.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'XVideos',
-    value: 'xvideos',
-    version: '2.3.5',
-    icon: 'https://cdn-icons-png.flaticon.com/512/831/831331.png',
+    display_name: 'UHDMovies',
+    value: 'uhd',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/uhd.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'Rule34Video',
-    value: 'rule34video',
-    version: '2.3.5',
-    icon: 'https://rule34video.com/apple-touch-icon.png',
+    display_name: 'NetflixMirror',
+    value: 'netflixMirror',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/netflixMirror.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'PornHub',
-    value: 'pornhub',
-    version: '2.3.5',
-    icon: 'https://www.pornhub.com/favicon.ico',
+    display_name: 'PrimeMirror',
+    value: 'primeMirror',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/primeMirror.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -133,10 +129,19 @@ const loadStoredSources = (): ProviderSource[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((s) => ({
-          ...s,
-          url: normalizeSourceUrl(s.url),
-        }));
+        const sanitized = parsed
+          .filter(
+            (s) =>
+              s &&
+              s.url &&
+              !s.url.includes('Manimanjar') &&
+              !s.id?.includes('custom-vega')
+          )
+          .map((s) => ({
+            ...s,
+            url: normalizeSourceUrl(s.url),
+          }));
+        if (sanitized.length > 0) return sanitized;
       }
     }
   } catch (e) {
@@ -157,7 +162,7 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   sources: loadStoredSources(),
   activeSourceId: 'zenda-official',
   manifests: FALLBACK_MANIFESTS,
-  activeProvider: FALLBACK_MANIFESTS[0], // default: VMovies (vega)
+  activeProvider: FALLBACK_MANIFESTS[0], // default: MultiStream (autoEmbed)
   isLoading: false,
   error: null,
 
@@ -174,11 +179,21 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
 
       // If a specific custom source was requested, load it directly
       if (customSourceUrl) {
-        const manifests = await engine.loadManifest(customSourceUrl);
+        const rawManifests = await engine.loadManifest(customSourceUrl);
+        const manifests = rawManifests.filter(
+          (m) => !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
+        );
         const storedActive = useSettingsStore.getState().activeProviderValue;
-        let active = manifests.find((m) => m.value === storedActive && !m.disabled);
+        let active = manifests.find(
+          (m) => m.value === storedActive && !m.disabled && !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
+        );
         if (!active) {
-          active = manifests.find((m) => !m.disabled) || manifests[0] || FALLBACK_MANIFESTS[0];
+          active =
+            manifests.find((m) => m.value === 'autoEmbed' && !m.disabled) ||
+            manifests.find((m) => m.value === 'vega' && !m.disabled) ||
+            manifests.find((m) => !m.disabled) ||
+            manifests[0] ||
+            FALLBACK_MANIFESTS[0];
         }
         set({
           manifests: manifests.length > 0 ? manifests : FALLBACK_MANIFESTS,
@@ -205,11 +220,11 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
       const allResults = await Promise.all(manifestPromises);
       const combined = allResults.flat();
 
-      // Deduplicate manifests by value
+      // Deduplicate manifests by value and filter disallowed
       const seen = new Set<string>();
       const mergedManifests: ProviderManifest[] = [];
       for (const m of combined) {
-        if (!seen.has(m.value)) {
+        if (!seen.has(m.value) && !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())) {
           seen.add(m.value);
           mergedManifests.push(m);
         }
@@ -217,12 +232,19 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
 
       const finalManifests = mergedManifests.length > 0 ? mergedManifests : FALLBACK_MANIFESTS;
 
-      // Determine active provider: stored -> vega -> first non-disabled
-      const storedActive = useSettingsStore.getState().activeProviderValue;
-      let active = finalManifests.find((m) => m.value === storedActive && !m.disabled);
+      // Determine active provider: stored -> autoEmbed -> vega -> first non-disabled
+      let storedActive = useSettingsStore.getState().activeProviderValue;
+      if (storedActive && DISALLOWED_PROVIDERS.has(storedActive.toLowerCase())) {
+        storedActive = 'autoEmbed';
+      }
+
+      let active = finalManifests.find(
+        (m) => m.value === storedActive && !m.disabled && !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
+      );
       if (!active) {
         active =
-          finalManifests.find((m) => m.value === 'vega') ||
+          finalManifests.find((m) => m.value === 'autoEmbed' && !m.disabled) ||
+          finalManifests.find((m) => m.value === 'vega' && !m.disabled) ||
           finalManifests.find((m) => !m.disabled) ||
           finalManifests[0] ||
           FALLBACK_MANIFESTS[0];
@@ -250,6 +272,9 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   },
 
   setActiveProvider: (value: string) => {
+    if (DISALLOWED_PROVIDERS.has(value.toLowerCase())) {
+      value = 'autoEmbed';
+    }
     const { manifests } = get();
     let found = manifests.find((m) => m.value === value);
     if (!found) {

@@ -3,8 +3,9 @@
  * 
  * Powered by Vercel Edge Runtime (global CDN nodes in 300+ locations):
  * - Unlimited video streaming via direct Web Stream piping (no memory buffering)
- * - HTTP 206 Partial Content range requests for instant scrubbing/seeking
  * - Automatic Referer & Origin injection to bypass video CDN 403 Forbidden blocks
+ * - HLS M3U8 Playlist rewriting (routes all child playlists and segments through proxy)
+ * - HTTP 206 Partial Content range requests for instant scrubbing/seeking
  * - Universal CORS headers for web browsers and Smart TVs
  */
 
@@ -35,7 +36,7 @@ export default async function handler(request) {
         app: 'Vega Web Edge Proxy',
         status: 'online',
         usage: `${reqUrl.origin}/api/proxy?url=https://example.com/stream.m3u8`,
-        version: '3.0.0',
+        version: '3.2.0',
       }),
       {
         status: 200,
@@ -50,17 +51,37 @@ export default async function handler(request) {
   try {
     const parsedTarget = new URL(targetUrl);
 
-    // Filter and build upstream request headers
+    // Build upstream request headers
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.delete('host');
     upstreamHeaders.delete('origin');
     upstreamHeaders.delete('referer');
 
-    upstreamHeaders.set('Referer', `${parsedTarget.origin}/`);
-    upstreamHeaders.set('Origin', parsedTarget.origin);
+    // Extract custom referer / origin if passed
+    const customReferer = reqUrl.searchParams.get('referer') || request.headers.get('x-proxy-referer');
+    const customOrigin = reqUrl.searchParams.get('origin') || request.headers.get('x-proxy-origin');
+
+    if (customReferer) {
+      upstreamHeaders.set('Referer', customReferer);
+    } else {
+      upstreamHeaders.set('Referer', `${parsedTarget.origin}/`);
+    }
+
+    if (customOrigin) {
+      upstreamHeaders.set('Origin', customOrigin);
+    } else if (customReferer) {
+      try {
+        upstreamHeaders.set('Origin', new URL(customReferer).origin);
+      } catch {
+        upstreamHeaders.set('Origin', parsedTarget.origin);
+      }
+    } else {
+      upstreamHeaders.set('Origin', parsedTarget.origin);
+    }
+
     upstreamHeaders.set(
       'User-Agent',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     );
 
     // Forward range header for video player scrubbing
@@ -89,6 +110,64 @@ export default async function handler(request) {
     responseHeaders.delete('content-security-policy-report-only');
     responseHeaders.delete('x-frame-options');
 
+    // Check if response is an M3U8 HLS playlist
+    const contentType = (upstreamResponse.headers.get('content-type') || '').toLowerCase();
+    const isM3u8 =
+      contentType.includes('mpegurl') ||
+      contentType.includes('application/x-mpegurl') ||
+      targetUrl.includes('.m3u8') ||
+      targetUrl.includes('m3u8');
+
+    if (isM3u8 && upstreamResponse.ok && request.method === 'GET') {
+      const text = await upstreamResponse.text();
+      if (text.includes('#EXTM3U')) {
+        const targetBase = new URL(targetUrl);
+        const refParam = customReferer ? `&referer=${encodeURIComponent(customReferer)}` : '';
+        const origParam = customOrigin ? `&origin=${encodeURIComponent(customOrigin)}` : '';
+        const proxyPath = reqUrl.pathname;
+
+        const rewritten = text
+          .split('\n')
+          .map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) return line;
+
+            // Handle #EXT-X-MAP:URI="init.mp4"
+            if (trimmed.startsWith('#EXT-X-MAP:URI=')) {
+              const match = trimmed.match(/URI="([^"]+)"/);
+              if (match) {
+                try {
+                  const segUrl = new URL(match[1], targetBase).href;
+                  const proxied = `${proxyPath}?url=${encodeURIComponent(segUrl)}${refParam}${origParam}`;
+                  return trimmed.replace(match[1], proxied);
+                } catch {
+                  return line;
+                }
+              }
+            }
+
+            // Keep all comment / directive lines untouched
+            if (trimmed.startsWith('#')) return line;
+
+            // Rewrite stream/segment URIs to route through edge proxy
+            try {
+              const resolved = new URL(trimmed, targetBase).href;
+              return `${proxyPath}?url=${encodeURIComponent(resolved)}${refParam}${origParam}`;
+            } catch {
+              return line;
+            }
+          })
+          .join('\n');
+
+        responseHeaders.set('Content-Type', 'application/vnd.apple.mpegurl');
+        return new Response(rewritten, {
+          status: 200,
+          headers: responseHeaders,
+        });
+      }
+    }
+
+    // Direct stream piping via Web Streams (zero memory buffer, line rate)
     return new Response(upstreamResponse.body, {
       status: upstreamResponse.status,
       statusText: upstreamResponse.statusText,

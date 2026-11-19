@@ -34,9 +34,11 @@ export interface DirectLink {
 export interface Stream {
   server: string;
   link: string;
-  type: 'm3u8' | 'mp4';
+  type: 'm3u8' | 'mp4' | 'mkv' | string;
   quality: string;
   headers?: Record<string, string>;
+  subtitles?: any[];
+  skip?: any;
 }
 
 export interface ProviderManifest {
@@ -75,6 +77,10 @@ export interface ProviderContext {
   commonHeaders: Record<string, string>;
   kvStore: ProviderKvStore;
   getBaseUrl: () => Promise<string>;
+  openWebView?: (
+    url: string,
+    options?: any
+  ) => Promise<{ url: string; data: string; cookies: Record<string, string> }>;
 }
 
 export interface LoadedProvider {

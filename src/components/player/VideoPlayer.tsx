@@ -6,7 +6,7 @@ import { QualityOption } from './QualitySelector';
 import { useWatchHistoryStore } from '../../stores/watchHistoryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { smartProxy } from '../../lib/providers/smartProxy';
-import { Lock, Unlock, Play, X, RotateCcw, RotateCw } from 'lucide-react';
+import { Lock, Unlock, Play, X, RotateCcw, RotateCw, Film } from 'lucide-react';
 
 interface EpisodeItem {
   title: string;
@@ -121,18 +121,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       (video as any).referrerPolicy = 'no-referrer';
     } catch {}
 
-    // In 'direct' mode: connect directly to CDN at full 20-30+ Mbps line speed
-    // In 'proxy' mode: route via smartProxy edge proxy
     const rawLink = activeStream.link;
     const isHls =
       activeStream.type === 'm3u8' ||
       rawLink.includes('.m3u8') ||
       rawLink.includes('m3u8');
+    const isMkv =
+      activeStream.type === 'mkv' ||
+      rawLink.endsWith('.mkv') ||
+      rawLink.includes('.mkv?');
+
+    // If stream requires headers (e.g. Referer/Origin), route via proxy to inject them
+    const hasRequiredHeaders =
+      activeStream.headers && Object.keys(activeStream.headers).length > 0;
+    const effectiveRouting =
+      hasRequiredHeaders || streamRoutingMode === 'proxy' ? 'proxy' : 'direct';
 
     const streamUrl =
-      streamRoutingMode === 'direct'
+      effectiveRouting === 'direct'
         ? rawLink
-        : smartProxy.formatUrl(rawLink);
+        : smartProxy.formatUrl(rawLink, activeStream.headers);
 
     // Clean up previous HLS instance
     if (hlsRef.current) {
@@ -498,6 +506,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     nextEpisode &&
     !autoNextDismissed;
 
+  const isCurrentStreamMkv =
+    activeStream?.type === 'mkv' ||
+    activeStream?.link?.endsWith('.mkv') ||
+    activeStream?.link?.includes('.mkv?');
+
   return (
     <div
       ref={containerRef}
@@ -603,8 +616,56 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
+      {/* MKV Container Guidance */}
+      {isCurrentStreamMkv && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 p-6 z-40 text-center max-w-lg mx-auto"
+        >
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-4">
+            <Film className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Matroska (MKV) Stream Detected</h2>
+          <p className="text-xs sm:text-sm text-vega-textSecondary mb-6 leading-relaxed">
+            Standard web browsers cannot decode MKV video containers directly. For instant browser streaming, switch to MultiStream (4K/1080p HLS) or open in an external video player (VLC / MX Player).
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3 w-full">
+            <a
+              href={`vlc://${activeStream.link}`}
+              className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white flex items-center justify-center gap-2"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>Open in VLC</span>
+            </a>
+            <a
+              href={activeStream.link}
+              target="_blank"
+              rel="noreferrer"
+              download
+              className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
+            >
+              Download MKV
+            </a>
+            {streams.length > 1 && (
+              <button
+                onClick={() => setCurrentStreamIndex((prev) => (prev + 1) % streams.length)}
+                className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
+              >
+                Try Next Server
+              </button>
+            )}
+            <button
+              onClick={onBack}
+              className="px-5 py-2.5 rounded-full bg-white/5 text-white/70 text-sm font-semibold hover:bg-white/10"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Error state */}
-      {errorMessage && (
+      {errorMessage && !isCurrentStreamMkv && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 p-6 z-40 text-center"

@@ -61,12 +61,36 @@ function fetchWithRedirects(targetUrl, incomingReq, redirectCount = 0) {
       headers['accept'] = '*/*';
     }
 
-    // Set Referer and Origin to target domain to prevent CDN 403 Forbidden
-    headers['referer'] = `${parsedUrl.origin}/`;
-    headers['origin'] = parsedUrl.origin;
+    // Extract custom referer / origin if provided
+    let customReferer = incomingReq.headers['x-proxy-referer'];
+    let customOrigin = incomingReq.headers['x-proxy-origin'];
+    try {
+      const parsedReq = new URL(incomingReq.url || '/', `http://${incomingReq.headers.host || 'localhost'}`);
+      if (parsedReq.searchParams.get('referer')) customReferer = parsedReq.searchParams.get('referer');
+      if (parsedReq.searchParams.get('origin')) customOrigin = parsedReq.searchParams.get('origin');
+    } catch {}
+
+    if (customReferer) {
+      headers['referer'] = customReferer;
+    } else {
+      headers['referer'] = `${parsedUrl.origin}/`;
+    }
+
+    if (customOrigin) {
+      headers['origin'] = customOrigin;
+    } else if (customReferer) {
+      try {
+        headers['origin'] = new URL(customReferer).origin;
+      } catch {
+        headers['origin'] = parsedUrl.origin;
+      }
+    } else {
+      headers['origin'] = parsedUrl.origin;
+    }
+
     headers['user-agent'] =
       incomingReq.headers['user-agent'] ||
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
     const reqOptions = {
       protocol: parsedUrl.protocol,
@@ -182,11 +206,35 @@ const server = http.createServer(async (req, res) => {
         const bodyText = Buffer.concat(chunks).toString('utf-8');
         const baseUrl = new URL(finalUrl);
 
+        let customReferer = '';
+        let customOrigin = '';
+        try {
+          const parsedReq = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+          customReferer = parsedReq.searchParams.get('referer') || '';
+          customOrigin = parsedReq.searchParams.get('origin') || '';
+        } catch {}
+        const refParam = customReferer ? `&referer=${encodeURIComponent(customReferer)}` : '';
+        const origParam = customOrigin ? `&origin=${encodeURIComponent(customOrigin)}` : '';
+
         // Rewrite relative URLs to route through proxy
         const lines = bodyText.split('\n');
         const rewrittenLines = lines.map((line) => {
           const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) return line;
+          if (!trimmed) return line;
+
+          if (trimmed.startsWith('#EXT-X-MAP:URI=')) {
+            const match = trimmed.match(/URI="([^"]+)"/);
+            if (match) {
+              try {
+                const segUrl = new URL(match[1], baseUrl).toString();
+                return trimmed.replace(match[1], `/?url=${encodeURIComponent(segUrl)}${refParam}${origParam}`);
+              } catch {
+                return line;
+              }
+            }
+          }
+
+          if (trimmed.startsWith('#')) return line;
 
           let absoluteSegmentUrl = '';
           try {
@@ -195,11 +243,12 @@ const server = http.createServer(async (req, res) => {
             return line;
           }
 
-          // Return proxied segment URL
-          return `/?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+          // Return proxied segment URL with referer/origin attached
+          return `/?url=${encodeURIComponent(absoluteSegmentUrl)}${refParam}${origParam}`;
         });
 
         const rewrittenBody = rewrittenLines.join('\n');
+        responseHeaders['content-type'] = 'application/vnd.apple.mpegurl';
         responseHeaders['content-length'] = Buffer.byteLength(rewrittenBody, 'utf-8');
         res.writeHead(status, responseHeaders);
         res.end(rewrittenBody);

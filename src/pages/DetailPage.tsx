@@ -46,8 +46,28 @@ export const DetailPage: React.FC = () => {
     }
   }, [link, loadDetail, autoPlay]);
 
-  if (isLoadingDetail || !currentDetail) {
+  if (isLoadingDetail) {
     return <DetailSkeleton />;
+  }
+
+  if (!currentDetail) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto">
+        <Film className="w-16 h-16 text-vega-textSecondary mb-4" />
+        <h2 className="text-xl font-bold text-white mb-2">Details Unavailable</h2>
+        <p className="text-sm text-vega-textSecondary mb-6">
+          Could not load details for this title from {activeProvider?.display_name || 'this provider'}. You can try reloading or switch to another provider.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button variant="primary" onClick={() => loadDetail(link)}>
+            Retry
+          </Button>
+          <Button variant="secondary" onClick={() => navigate(-1)}>
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   const isSeries = currentDetail.type === 'series' || (currentDetail.linkList && currentDetail.linkList.length > 1);

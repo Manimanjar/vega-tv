@@ -13,17 +13,16 @@ import { smartProxy } from './smartProxy';
 import { createKvStore } from './kvStore';
 
 export const ZENDA_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main';
-export const MANIMANJAR_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Manimanjar/vega-providers@main';
 export const DEFAULT_SOURCE_URL = ZENDA_SOURCE_URL;
 
 export function normalizeSourceUrl(url: string): string {
   if (!url) return ZENDA_SOURCE_URL;
   const clean = url.trim().replace(/\/+$/, '');
-  if (clean.includes('raw.githubusercontent.com/Zenda-Cross/vega-providers/main')) {
+  if (
+    clean.includes('raw.githubusercontent.com/Zenda-Cross/vega-providers/main') ||
+    clean.includes('Manimanjar')
+  ) {
     return ZENDA_SOURCE_URL;
-  }
-  if (clean.includes('raw.githubusercontent.com/Manimanjar/vega-providers/main')) {
-    return MANIMANJAR_SOURCE_URL;
   }
   return clean;
 }
@@ -52,9 +51,8 @@ export class ProviderEngine {
     }
     const endpoints = [
       'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/urls.json',
-      'https://cdn.jsdelivr.net/gh/Manimanjar/vega-providers@main/urls.json',
+      'https://fastly.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/urls.json',
       'https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main/urls.json',
-      'https://raw.githubusercontent.com/Manimanjar/vega-providers/main/urls.json',
     ];
     for (const ep of endpoints) {
       try {
@@ -125,22 +123,38 @@ export class ProviderEngine {
           return found[1].url;
         }
 
-        // Static fallbacks for popular Vega providers
+        // Static fallbacks for popular official Vega providers
         const staticBases: Record<string, string> = {
+          autoembed: 'https://vidsrc.cc',
           vega: 'https://vegamovies.lease',
           drive: 'https://new3.moviesdrive.cyou/',
-          xvideos: 'https://www.xvideos.com',
-          rule34video: 'https://rule34video.com',
-          pornhub: 'https://www.pornhub.com',
           kat: 'https://new.katmoviehd.top',
           katmovies: 'https://new.katmoviehd.top',
           multi: 'https://m1.multimovies.courses',
           w4u: 'https://world4ufree.vu',
           hdhub: 'https://new14.hdhub4u.cl',
           '4khdhub': 'https://4khdhub.one',
+          mod: 'https://moviesmod.org.in',
         };
 
         return staticBases[providerValue.toLowerCase()] || '';
+      },
+      openWebView: async (url: string, _options?: any) => {
+        try {
+          const resp = await smartProxy.fetchWithFailover(url);
+          const data = await resp.text();
+          return {
+            url,
+            data,
+            cookies: {},
+          };
+        } catch {
+          return {
+            url,
+            data: '',
+            cookies: {},
+          };
+        }
       },
     };
   }
@@ -241,19 +255,12 @@ export class ProviderEngine {
       return this.loadedProviders.get(cacheKey)!;
     }
 
+    if (['xvideos', 'pornhub', 'rule34video'].includes(providerValue.toLowerCase())) {
+      throw new Error(`Provider "${providerValue}" is not supported`);
+    }
+
     let manifestList = await this.loadManifest(cleanSource);
     let manifest = manifestList.find((m) => m.value === providerValue);
-
-    // If not found in primary source, check alternate repo (Zenda or Manimanjar)
-    const altSource = cleanSource === MANIMANJAR_SOURCE_URL ? ZENDA_SOURCE_URL : MANIMANJAR_SOURCE_URL;
-    if (!manifest) {
-      const altList = await this.loadManifest(altSource);
-      const altManifest = altList.find((m) => m.value === providerValue);
-      if (altManifest) {
-        manifest = altManifest;
-        return this.loadProvider(providerValue, altSource);
-      }
-    }
 
     if (!manifest) {
       manifest = {
@@ -271,8 +278,7 @@ export class ProviderEngine {
       const candidatePaths = [
         `${cleanSource}/dist/${providerValue}/${fileName}`,
         cleanSource.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
-        `${altSource}/dist/${providerValue}/${fileName}`,
-        altSource.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
+        `https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main/dist/${providerValue}/${fileName}`,
       ];
 
       for (const fileUrl of candidatePaths) {

@@ -156,9 +156,19 @@ export class SmartProxyManager {
   /**
    * Formats any target URL to route through the active proxy
    */
-  public formatUrl(targetUrl: string): string {
+  public formatUrl(targetUrl: string, headers?: Record<string, string>): string {
     if (!targetUrl || this.isDirectCorsFriendly(targetUrl)) {
       return targetUrl;
+    }
+
+    // Extract referer / origin from headers if present
+    let refParam = '';
+    let origParam = '';
+    if (headers) {
+      const ref = headers['Referer'] || headers['referer'];
+      const orig = headers['Origin'] || headers['origin'];
+      if (ref) refParam = `&referer=${encodeURIComponent(ref)}`;
+      if (orig) origParam = `&origin=${encodeURIComponent(orig)}`;
     }
 
     // If already routed through proxy, don't double proxy
@@ -169,10 +179,11 @@ export class SmartProxyManager {
     // 1. User configured proxy or detected local proxy
     if (this.customProxyUrl && !this.customProxyUrl.includes('cors-proxy.workers.dev')) {
       const clean = this.customProxyUrl.replace(/\/+$/, '');
+      const separator = clean.includes('?') ? '&' : '?';
       if (clean.includes('?url=') || clean.endsWith('=')) {
-        return `${clean}${encodeURIComponent(targetUrl)}`;
+        return `${clean}${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
       }
-      return `${clean}/${encodeURIComponent(targetUrl)}`;
+      return `${clean}${separator}url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 
     // 2. Fullstack host with /api/proxy (Vercel / Cloudflare Pages)
@@ -181,7 +192,7 @@ export class SmartProxyManager {
       window.location.hostname !== 'localhost' &&
       !window.location.hostname.includes('github.io')
     ) {
-      return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+      return `/api/proxy?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 
     // 3. If running over HTTP or local proxy detected
@@ -189,7 +200,7 @@ export class SmartProxyManager {
       typeof window !== 'undefined' &&
       (window.location.protocol === 'http:' || this.isLocalProxyAvailable)
     ) {
-      return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}`;
+      return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 
     return targetUrl;
@@ -224,7 +235,7 @@ export class SmartProxyManager {
       };
     }
 
-    const testTarget = 'https://raw.githubusercontent.com/Manimanjar/vega-providers/main/manifest.json';
+    const testTarget = 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/manifest.json';
     const finalUrl = clean.includes('?url=') || clean.endsWith('=')
       ? `${clean}${encodeURIComponent(testTarget)}`
       : `${clean}/${encodeURIComponent(testTarget)}`;
@@ -298,9 +309,22 @@ export class SmartProxyManager {
     });
 
     inst.interceptors.request.use((config) => {
-      if (config.url) {
-        config.url = this.formatUrl(config.url);
+      let extraHeaders: Record<string, string> | undefined;
+      if (config.headers) {
+        const ref = (config.headers as any)['Referer'] || (config.headers as any)['referer'];
+        const orig = (config.headers as any)['Origin'] || (config.headers as any)['origin'];
+        if (ref || orig) {
+          extraHeaders = {
+            ...(ref ? { Referer: ref } : {}),
+            ...(orig ? { Origin: orig } : {}),
+          };
+        }
       }
+
+      if (config.url) {
+        config.url = this.formatUrl(config.url, extraHeaders);
+      }
+
       // In browsers, strip forbidden request headers that trigger XHR errors
       if (typeof window !== 'undefined' && config.headers) {
         delete (config.headers as any)['User-Agent'];
