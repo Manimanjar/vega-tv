@@ -15,9 +15,9 @@ export const BottomNav: React.FC = () => {
   return (
     <nav
       data-nav-section="navigation-bar"
-      className="fixed bottom-0 inset-x-0 z-40 bg-vega-black/90 backdrop-blur-xl border-t border-white/5 py-2 px-6 safe-area-pb"
+      className="fixed bottom-0 inset-x-0 z-40 bg-vega-black/95 backdrop-blur-2xl border-t border-white/10 safe-area-pb"
     >
-      <div className="max-w-md mx-auto flex items-center justify-around">
+      <div className="max-w-md sm:max-w-xl mx-auto flex items-center justify-around h-16 px-4">
         {navItems.map((item) => {
           const isActive =
             item.path === '/'
@@ -32,13 +32,13 @@ export const BottomNav: React.FC = () => {
               to={item.path}
               data-focusable="true"
               data-nav-section="navigation-bar"
-              className="flex flex-col items-center gap-1 group py-1 px-3 focus:outline-none"
+              className="flex flex-col items-center justify-center flex-1 h-full py-1 group focus:outline-none select-none transition-transform active:scale-90"
             >
               {/* Material 3 active pill background */}
               <div
-                className={`flex items-center justify-center w-14 h-8 rounded-full transition-all duration-300 ${
+                className={`flex items-center justify-center w-16 h-8 rounded-full transition-all duration-300 ${
                   isActive
-                    ? 'bg-vega-navPill text-white shadow-sm'
+                    ? 'bg-vega-navPill text-white shadow-md'
                     : 'bg-transparent text-vega-textSecondary group-hover:text-white'
                 }`}
               >
@@ -51,8 +51,8 @@ export const BottomNav: React.FC = () => {
 
               {/* Label */}
               <span
-                className={`text-[11px] font-medium tracking-tight transition-colors duration-200 ${
-                  isActive ? 'text-white font-semibold' : 'text-vega-textSecondary group-hover:text-white'
+                className={`text-[11px] font-medium tracking-tight transition-colors duration-200 mt-0.5 ${
+                  isActive ? 'text-white font-bold' : 'text-vega-textSecondary group-hover:text-white'
                 }`}
               >
                 {item.name}

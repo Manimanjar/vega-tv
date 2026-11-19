@@ -9,18 +9,18 @@ import { ScrollRow } from '../components/ui/ScrollRow';
 import { HeroSkeleton } from '../components/skeletons/HeroSkeleton';
 import { PosterSkeleton } from '../components/skeletons/PosterSkeleton';
 import { Button } from '../components/ui/Button';
-import { AlertCircle, Film, RefreshCw, Play } from 'lucide-react';
+import { Film, Play, Sparkles } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
 
-  const { activeProvider, isLoading: isProviderLoading } = useProviderStore();
+  const { activeProvider, isProviderLoading, manifests } = useProviderStore() as any;
   const {
     catalogs,
     categoryPosts,
     heroPosts,
+    activeCategoryFilter,
     isLoadingHome,
-    error,
     loadHomeContent,
   } = useContentStore();
 
@@ -30,22 +30,22 @@ export const HomePage: React.FC = () => {
     if (activeProvider) {
       loadHomeContent();
     }
-  }, [activeProvider, loadHomeContent]);
+  }, [activeProvider?.value]);
 
-  // Loading state
-  if (isProviderLoading || (isLoadingHome && heroPosts.length === 0)) {
+  // Loading skeleton shown only on initial cold boot before preloaded data mounts
+  if (isProviderLoading && heroPosts.length === 0) {
     return (
-      <div className="pt-2 pb-16">
+      <div className="pt-2 pb-24">
         <HeroSkeleton />
-        <div className="px-4 sm:px-8 space-y-8">
+        <div className="px-4 sm:px-8 space-y-8 mt-6">
           <div>
-            <div className="h-6 w-48 bg-vega-surface1 rounded mb-4" />
+            <div className="h-6 w-48 bg-vega-surface1 rounded mb-4 animate-pulse" />
             <div className="flex gap-4 overflow-hidden">
               <PosterSkeleton count={6} />
             </div>
           </div>
           <div>
-            <div className="h-6 w-48 bg-vega-surface1 rounded mb-4" />
+            <div className="h-6 w-48 bg-vega-surface1 rounded mb-4 animate-pulse" />
             <div className="flex gap-4 overflow-hidden">
               <PosterSkeleton count={6} />
             </div>
@@ -55,32 +55,13 @@ export const HomePage: React.FC = () => {
     );
   }
 
-  // Error state
-  if (error && heroPosts.length === 0) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-vega-surface2 flex items-center justify-center mb-4">
-          <AlertCircle className="w-8 h-8 text-vega-error" />
-        </div>
-        <h2 className="text-xl font-bold text-white mb-2">Unable to Load Content</h2>
-        <p className="text-sm text-vega-textSecondary max-w-md mb-6 leading-relaxed">
-          {error}
-        </p>
-        <div className="flex gap-3">
-          <Button variant="primary" onClick={() => loadHomeContent()}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Retry
-          </Button>
-          <Button variant="secondary" onClick={() => navigate('/settings')}>
-            Configure CORS Proxy
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Filter catalogs based on selected category chip if any
+  const displayedCatalogs = activeCategoryFilter
+    ? catalogs.filter((c) => c.filter === activeCategoryFilter)
+    : catalogs;
 
   return (
-    <div className="min-h-screen pb-12">
+    <div className="min-h-screen pb-24">
       {/* Featured Hero Carousel */}
       {heroPosts.length > 0 && <HeroCard posts={heroPosts} />}
 
@@ -152,7 +133,7 @@ export const HomePage: React.FC = () => {
       )}
 
       {/* Catalog Categories Horizontal Rows */}
-      {catalogs.map((cat, idx) => {
+      {displayedCatalogs.map((cat, idx) => {
         const posts = categoryPosts[cat.filter] || [];
         if (posts.length === 0) return null;
 
@@ -180,17 +161,24 @@ export const HomePage: React.FC = () => {
         );
       })}
 
-      {/* Empty State if provider has no content */}
-      {!isLoadingHome && catalogs.length === 0 && (
+      {/* Fallback Banner if all categories currently empty */}
+      {displayedCatalogs.every((cat) => (categoryPosts[cat.filter] || []).length === 0) && (
         <div className="min-h-[50vh] flex flex-col items-center justify-center text-center p-6">
-          <Film className="w-12 h-12 text-vega-textSecondary mb-3" />
-          <h3 className="text-lg font-bold text-white mb-1">No content found</h3>
-          <p className="text-xs text-vega-textSecondary mb-4">
-            Try switching to another provider in the top bar.
+          <div className="w-14 h-14 rounded-2xl bg-vega-surface2 flex items-center justify-center mb-4 text-vega-ctaPrimary shadow-lg">
+            <Sparkles className="w-7 h-7" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Switch Provider to View Content</h3>
+          <p className="text-sm text-vega-textSecondary max-w-sm mb-6 leading-relaxed">
+            Choose from official Zenda providers (VMovies, MultiStream) or custom sources in the top menu.
           </p>
-          <Button variant="secondary" onClick={() => navigate('/settings')}>
-            Manage Providers
-          </Button>
+          <div className="flex gap-3">
+            <Button variant="primary" onClick={() => loadHomeContent()}>
+              Refresh Feeds
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/settings')}>
+              Manage Sources
+            </Button>
+          </div>
         </div>
       )}
     </div>

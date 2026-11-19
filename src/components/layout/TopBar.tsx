@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Check, Layers, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Menu, Search, Layers, RefreshCw } from 'lucide-react';
 import { useProviderStore } from '../../stores/providerStore';
 import { useContentStore } from '../../stores/contentStore';
+import { ProviderDrawer } from './ProviderDrawer';
+import { ProviderTestDialog } from '../modals/ProviderTestProgress';
 
 interface TopBarProps {
   title?: string;
@@ -12,174 +14,180 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [showProviderMenu, setShowProviderMenu] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [testProviderValue, setTestProviderValue] = useState<string | null>(null);
 
-  const { manifests, activeProvider, setActiveProvider } = useProviderStore();
-  const { loadHomeContent, isLoadingHome } = useContentStore();
+  const { activeProvider, activeSourceId } = useProviderStore();
+  const { loadHomeContent, isLoadingHome, catalogs, activeCategoryFilter, setActiveCategoryFilter } = useContentStore();
 
   const isHome = location.pathname === '/';
 
-  const handleProviderChange = (value: string) => {
-    setActiveProvider(value);
-    setShowProviderMenu(false);
-    loadHomeContent();
-  };
-
   return (
-    <header
-      data-nav-section="top-bar"
-      className="sticky top-0 inset-x-0 z-30 bg-vega-black/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-8 py-3.5 flex items-center justify-between"
-    >
-      <div className="flex items-center gap-3">
-        {showBack ? (
-          <button
-            type="button"
-            aria-label="Back"
-            data-focusable="true"
-            data-nav-section="top-bar"
-            onClick={() => navigate(-1)}
-            className="p-2 -ml-2 rounded-full text-white/80 hover:text-white hover:bg-vega-surface2 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-        ) : null}
-
-        {/* Vega Logo and App Name */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate('/')}
-          className="flex items-center gap-2 cursor-pointer focus:outline-none"
-        >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-white to-gray-400 flex items-center justify-center shadow-md">
-            <svg
-              className="w-4 h-4 text-black fill-current ml-0.5"
-              viewBox="0 0 24 24"
-            >
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-          </div>
-          <div>
-            <span className="font-extrabold text-lg tracking-tight text-white">Vega</span>
-            <span className="text-xs font-semibold ml-1 px-1.5 py-0.5 rounded bg-vega-surface3 text-vega-ctaPrimary">
-              WEB
-            </span>
-          </div>
-        </div>
-
-        {title && <span className="text-sm font-semibold text-vega-textSecondary">/ {title}</span>}
-      </div>
-
-      {/* Provider Selector Dropdown & Actions */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {isHome && (
-          <button
-            type="button"
-            aria-label="Refresh content"
-            data-focusable="true"
-            data-nav-section="top-bar"
-            onClick={() => loadHomeContent()}
-            disabled={isLoadingHome}
-            className="p-2 rounded-full bg-vega-surface2 hover:bg-vega-surface3 text-white/80 hover:text-white transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoadingHome ? 'animate-spin' : ''}`} />
-          </button>
-        )}
-
-        {/* Active Provider Pill Dropdown */}
-        <div className="relative">
-          <button
-            type="button"
-            data-focusable="true"
-            data-nav-section="top-bar"
-            onClick={() => setShowProviderMenu((prev) => !prev)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-vega-surface2 hover:bg-vega-surface3 border border-white/5 text-xs font-semibold text-white transition-all shadow-sm"
-          >
-            {activeProvider?.icon ? (
-              <img
-                src={activeProvider.icon}
-                alt=""
-                className="w-4 h-4 rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Layers className="w-3.5 h-3.5 text-vega-textSecondary" />
-            )}
-            <span className="max-w-[120px] truncate">
-              {activeProvider?.display_name || 'Select Provider'}
-            </span>
-            <ChevronDown className="w-3 h-3 text-vega-textSecondary" />
-          </button>
-
-          {/* Dropdown Menu */}
-          {showProviderMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowProviderMenu(false)}
-              />
-              <div
-                className="absolute right-0 top-10 w-64 max-h-72 bg-vega-surface1 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 overflow-y-auto no-scrollbar"
-                data-nav-section="provider-menu"
+    <>
+      <header
+        data-nav-section="top-bar"
+        className="sticky top-0 inset-x-0 z-30 bg-vega-black/95 backdrop-blur-2xl border-b border-white/5 safe-area-pt"
+      >
+        <div className="px-4 sm:px-8 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {showBack ? (
+              <button
+                type="button"
+                aria-label="Back"
+                data-focusable="true"
+                data-nav-section="top-bar"
+                onClick={() => navigate(-1)}
+                className="p-2 -ml-2 rounded-full text-white/80 hover:text-white hover:bg-vega-surface2 transition-colors"
               >
-                <div className="px-3 py-2 text-[11px] font-semibold text-vega-textSecondary uppercase tracking-wider border-b border-white/5">
-                  Installed Providers
-                </div>
-                <div className="py-1">
-                  {manifests.length === 0 ? (
-                    <div className="px-3 py-3 text-xs text-vega-textSecondary text-center">
-                      No providers available. Check settings or network.
-                    </div>
-                  ) : (
-                    manifests.map((m) => {
-                      const isSelected = activeProvider?.value === m.value;
-                      return (
-                        <button
-                          key={m.value}
-                          type="button"
-                          data-focusable="true"
-                          data-nav-section="provider-menu"
-                          onClick={() => handleProviderChange(m.value)}
-                          disabled={m.disabled}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-xs transition-colors ${
-                            isSelected
-                              ? 'bg-vega-navPill text-white font-semibold'
-                              : 'text-white/80 hover:bg-white/5 hover:text-white'
-                          } ${m.disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        >
-                          <div className="flex items-center gap-2.5 truncate">
-                            {m.icon && (
-                              <img
-                                src={m.icon}
-                                alt=""
-                                className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
-                              />
-                            )}
-                            <div className="truncate">
-                              <span className="block truncate">{m.display_name}</span>
-                              <span className="text-[10px] text-vega-textSecondary">
-                                v{m.version}
-                              </span>
-                            </div>
-                          </div>
-                          {isSelected && (
-                            <Check className="w-3.5 h-3.5 text-vega-ctaPrimary flex-shrink-0 ml-2" />
-                          )}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="Open Provider Menu"
+                data-focusable="true"
+                data-nav-section="top-bar"
+                onClick={() => setDrawerOpen(true)}
+                className="p-2 -ml-2 rounded-full text-white/80 hover:text-white hover:bg-vega-surface2 transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* Vega Logo and App Name */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2.5 cursor-pointer focus:outline-none"
+            >
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-white via-gray-200 to-gray-400 flex items-center justify-center shadow-lg shadow-white/5">
+                <svg
+                  className="w-4 h-4 text-black fill-current ml-0.5"
+                  viewBox="0 0 24 24"
+                >
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
               </div>
-            </>
-          )}
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-lg tracking-tight text-white">Vega</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-vega-surface3 text-vega-ctaPrimary uppercase tracking-wider">
+                  {activeSourceId === 'zenda-official' ? 'Zenda' : 'Custom'}
+                </span>
+              </div>
+            </div>
+
+            {title && <span className="text-sm font-semibold text-vega-textSecondary hidden sm:inline">/ {title}</span>}
+          </div>
+
+          {/* Quick Actions & Active Provider Pill */}
+          <div className="flex items-center gap-2">
+            {/* Quick Search Button */}
+            <button
+              type="button"
+              aria-label="Search"
+              data-focusable="true"
+              data-nav-section="top-bar"
+              onClick={() => navigate('/search')}
+              className="p-2 rounded-full bg-vega-surface2 hover:bg-vega-surface3 text-white/80 hover:text-white transition-colors"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
+            {/* Refresh */}
+            {isHome && (
+              <button
+                type="button"
+                aria-label="Refresh content"
+                data-focusable="true"
+                data-nav-section="top-bar"
+                onClick={() => loadHomeContent()}
+                disabled={isLoadingHome}
+                className="p-2 rounded-full bg-vega-surface2 hover:bg-vega-surface3 text-white/80 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoadingHome ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+
+            {/* Active Provider Button (Opens Drawer) */}
+            <button
+              type="button"
+              data-focusable="true"
+              data-nav-section="top-bar"
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-vega-surface2 hover:bg-vega-surface3 border border-white/10 text-xs font-semibold text-white transition-all shadow-sm active:scale-95"
+            >
+              {activeProvider?.icon ? (
+                <img
+                  src={activeProvider.icon}
+                  alt=""
+                  className="w-5 h-5 rounded-full object-cover border border-white/20"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <Layers className="w-4 h-4 text-vega-ctaPrimary" />
+              )}
+              <span className="max-w-[110px] sm:max-w-[150px] truncate">
+                {activeProvider?.display_name || 'Providers'}
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+
+        {/* Category Horizontal Filter Chips (shown on Home screen) */}
+        {isHome && catalogs.length > 0 && (
+          <div className="px-4 sm:px-8 pb-2.5 pt-0.5 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
+            <button
+              onClick={() => setActiveCategoryFilter('')}
+              className={`flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-medium transition-all ${
+                activeCategoryFilter === ''
+                  ? 'bg-vega-ctaPrimary text-vega-ctaText font-semibold shadow-sm'
+                  : 'bg-vega-surface2 text-white/70 hover:bg-vega-surface3 hover:text-white'
+              }`}
+            >
+              All Categories
+            </button>
+            {catalogs.slice(0, 8).map((cat) => {
+              const isSelected = activeCategoryFilter === cat.filter;
+              return (
+                <button
+                  key={cat.filter || cat.title}
+                  onClick={() => setActiveCategoryFilter(cat.filter)}
+                  className={`flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'bg-vega-ctaPrimary text-vega-ctaText font-semibold shadow-sm'
+                      : 'bg-vega-surface2 text-white/70 hover:bg-vega-surface3 hover:text-white'
+                  }`}
+                >
+                  {cat.title}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </header>
+
+      {/* Slide-over Provider Drawer */}
+      <ProviderDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onOpenTestModal={(val) => {
+          setDrawerOpen(false);
+          setTestProviderValue(val);
+        }}
+      />
+
+      {/* Provider Test Modal */}
+      {testProviderValue && (
+        <ProviderTestDialog
+          isOpen={!!testProviderValue}
+          providerValue={testProviderValue}
+          providerName={testProviderValue}
+          onClose={() => setTestProviderValue(null)}
+        />
+      )}
+    </>
   );
 };

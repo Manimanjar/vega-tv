@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Catalog, Post, Info } from '../lib/providers/types';
 import { ProviderEngine } from '../lib/providers/providerEngine';
 import { useProviderStore } from './providerStore';
-import { useSettingsStore } from './settingsStore';
+import { PRELOADED_DATA } from '../lib/providers/preloadedData';
 
 export interface ContentStoreState {
   catalogs: Catalog[];
@@ -13,6 +13,7 @@ export interface ContentStoreState {
   currentDetail: Info | null;
   searchResults: Post[];
   searchHistory: string[];
+  activeCategoryFilter: string;
   isLoadingHome: boolean;
   isLoadingMore: boolean;
   isLoadingDetail: boolean;
@@ -22,6 +23,7 @@ export interface ContentStoreState {
   // Actions
   loadHomeContent: () => Promise<void>;
   loadCategoryPosts: (filter: string, page?: number) => Promise<void>;
+  setActiveCategoryFilter: (filter: string) => void;
   search: (query: string, page?: number) => Promise<void>;
   loadDetail: (link: string) => Promise<Info | null>;
   addSearchHistory: (query: string) => void;
@@ -30,14 +32,14 @@ export interface ContentStoreState {
   clearDetail: () => void;
 }
 
-const SEARCH_HISTORY_KEY = 'vega_search_history_v1';
+const SEARCH_HISTORY_KEY = 'vega_search_history_v2';
 
 const loadSearchHistory = (): string[] => {
   try {
     const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
-    return raw ? JSON.parse(raw) : ['4k', 'trending', 'popular'];
+    return raw ? JSON.parse(raw) : ['Dune', 'Stranger Things', 'Arcane', 'Deadpool', '4K'];
   } catch {
-    return [];
+    return ['Dune', 'Stranger Things', 'Arcane', 'Deadpool'];
   }
 };
 
@@ -49,20 +51,28 @@ const saveSearchHistory = (history: string[]) => {
   }
 };
 
+// Initial state seeded with Zenda's VMovies data for instant first-render
+const initialVega = PRELOADED_DATA.vega;
+
 export const useContentStore = create<ContentStoreState>((set, get) => ({
-  catalogs: [],
-  categoryPosts: {},
-  categoryPages: {},
-  categoryHasMore: {},
-  heroPosts: [],
+  catalogs: initialVega.catalogs,
+  categoryPosts: initialVega.categoryPosts,
+  categoryPages: { '': 1 },
+  categoryHasMore: { '': true },
+  heroPosts: initialVega.heroPosts,
   currentDetail: null,
   searchResults: [],
   searchHistory: loadSearchHistory(),
+  activeCategoryFilter: '',
   isLoadingHome: false,
   isLoadingMore: false,
   isLoadingDetail: false,
   isSearching: false,
   error: null,
+
+  setActiveCategoryFilter: (filter: string) => {
+    set({ activeCategoryFilter: filter });
+  },
 
   loadHomeContent: async () => {
     const activeProvider = useProviderStore.getState().activeProvider;
@@ -71,12 +81,12 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
     set({ isLoadingHome: true, error: null });
 
     try {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const catalogs = await engine.getCatalog(activeProvider.value);
       set({ catalogs });
 
-      // Fetch top categories (up to 4 rows for home screen)
-      const topCatalogs = catalogs.slice(0, 4);
+      // Fetch top categories (up to 5 rows for home screen)
+      const topCatalogs = catalogs.slice(0, 5);
       const postsMap: Record<string, Post[]> = {};
       const pagesMap: Record<string, number> = {};
       const hasMoreMap: Record<string, boolean> = {};
@@ -86,31 +96,38 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
           const posts = await engine.getPosts(activeProvider.value, cat.filter, 1);
           postsMap[cat.filter] = posts;
           pagesMap[cat.filter] = 1;
-          hasMoreMap[cat.filter] = posts.length >= 10;
+          hasMoreMap[cat.filter] = posts.length >= 8;
         } catch (e) {
           console.warn(`Failed to fetch category ${cat.title}:`, e);
-          postsMap[cat.filter] = [];
+          // Preloaded fallback
+          const pre = PRELOADED_DATA[activeProvider.value];
+          postsMap[cat.filter] = pre?.categoryPosts[cat.filter] || [];
         }
       });
 
       await Promise.all(fetchPromises);
 
-      // Hero posts taken from first category
+      // Hero posts taken from first category or preloaded
       const firstCatPosts = postsMap[topCatalogs[0]?.filter] || [];
-      const heroes = firstCatPosts.slice(0, 5);
+      const preHero = PRELOADED_DATA[activeProvider.value]?.heroPosts || [];
+      const heroes = firstCatPosts.length >= 3 ? firstCatPosts.slice(0, 5) : preHero;
 
       set({
         categoryPosts: postsMap,
         categoryPages: pagesMap,
         categoryHasMore: hasMoreMap,
-        heroPosts: heroes,
+        heroPosts: heroes.length > 0 ? heroes : preHero,
         isLoadingHome: false,
       });
     } catch (err: any) {
-      console.error('Failed to load home content:', err);
+      console.warn('Failed to load home content from live provider, using preloaded:', err);
+      const pre = PRELOADED_DATA[activeProvider.value] || PRELOADED_DATA.vega;
       set({
+        catalogs: pre.catalogs,
+        categoryPosts: pre.categoryPosts,
+        heroPosts: pre.heroPosts,
         isLoadingHome: false,
-        error: err.message || 'Failed to load content from provider',
+        error: null, // Don't block UI with error screen when preloaded data exists
       });
     }
   },
@@ -123,7 +140,7 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
     set(isFirstPage ? { isLoadingHome: true } : { isLoadingMore: true });
 
     try {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const newPosts = await engine.getPosts(activeProvider.value, filter, page);
 
       set((state) => {
@@ -139,11 +156,10 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
         };
       });
     } catch (err: any) {
-      console.error(`Failed to load category posts for filter "${filter}":`, err);
+      console.warn(`Category load error:`, err);
       set({
         isLoadingHome: false,
         isLoadingMore: false,
-        error: err.message || 'Failed to fetch category posts',
       });
     }
   },
@@ -160,7 +176,7 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
     set({ isSearching: true, error: null });
 
     try {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const results = await engine.getSearchPosts(activeProvider.value, query.trim(), page);
 
       set({
@@ -170,10 +186,10 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
 
       get().addSearchHistory(query.trim());
     } catch (err: any) {
-      console.error('Search failed:', err);
+      console.warn('Search failed:', err);
       set({
         isSearching: false,
-        error: err.message || 'Search request failed',
+        searchResults: [],
       });
     }
   },
@@ -185,7 +201,7 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
     set({ isLoadingDetail: true, currentDetail: null, error: null });
 
     try {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const detail = await engine.getMeta(activeProvider.value, link);
 
       set({
@@ -195,10 +211,9 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
 
       return detail;
     } catch (err: any) {
-      console.error('Failed to load detail:', err);
+      console.warn('Failed to load detail:', err);
       set({
         isLoadingDetail: false,
-        error: err.message || 'Failed to load details',
       });
       return null;
     }

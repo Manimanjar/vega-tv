@@ -57,9 +57,10 @@ export const SettingsPage: React.FC = () => {
   } | null>(null);
 
   const proxyPresets = [
-    { label: 'Direct (No Proxy)', value: '' },
-    { label: 'AllOrigins', value: 'https://api.allorigins.win/raw?url=' },
-    { label: 'CorsProxy.io', value: 'https://corsproxy.io/?url=' },
+    { label: 'Auto Smart Proxy (Default)', value: '' },
+    { label: 'Edge Proxy (/api/proxy)', value: '/api/proxy?url=' },
+    { label: 'Local LAN Proxy (Port 8080)', value: 'http://localhost:8080/?url=' },
+    { label: 'CodeTabs Proxy', value: 'https://api.codetabs.com/v1/proxy?quest=' },
   ];
 
   const handleExportData = () => {

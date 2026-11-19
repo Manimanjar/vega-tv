@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { ProviderManifest, ProviderSource } from '../lib/providers/types';
-import { ProviderEngine, DEFAULT_SOURCE_URL } from '../lib/providers/providerEngine';
+import { ProviderEngine, ZENDA_SOURCE_URL, MANIMANJAR_SOURCE_URL } from '../lib/providers/providerEngine';
 import { useSettingsStore } from './settingsStore';
 
 export interface ProviderStoreState {
@@ -17,17 +17,81 @@ export interface ProviderStoreState {
   setActiveProvider: (value: string) => void;
   addSource: (name: string, url: string) => Promise<void>;
   removeSource: (id: string) => void;
-  setActiveSource: (id: string) => void;
+  setActiveSource: (id: string) => Promise<void>;
 }
 
-const SOURCES_STORAGE_KEY = 'vega_provider_sources_v1';
+const SOURCES_STORAGE_KEY = 'vega_provider_sources_v2';
 
-const defaultSources: ProviderSource[] = [
+export const DEFAULT_SOURCES: ProviderSource[] = [
   {
-    id: 'official-vega',
-    name: 'Vega Official Providers',
-    url: DEFAULT_SOURCE_URL,
+    id: 'zenda-official',
+    name: 'Movies & Series (Zenda Official)',
+    url: ZENDA_SOURCE_URL,
     enabled: true,
+  },
+  {
+    id: 'custom-vega',
+    name: 'Custom Streaming (Vega Providers)',
+    url: MANIMANJAR_SOURCE_URL,
+    enabled: true,
+  },
+];
+
+// Fallback manifests available instantly offline
+const FALLBACK_MANIFESTS: ProviderManifest[] = [
+  {
+    display_name: 'VMovies',
+    value: 'vega',
+    version: '2.52',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/vega.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'MultiStream',
+    value: 'autoEmbed',
+    version: '3.7',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'MoviesDrive',
+    value: 'drive',
+    version: '2.30',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'Rule34Video',
+    value: 'rule34video',
+    version: '2.3.5',
+    icon: 'https://rule34video.com/apple-touch-icon.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'XVideos',
+    value: 'xvideos',
+    version: '2.3.5',
+    icon: 'https://cdn-icons-png.flaticon.com/512/831/831331.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'PornHub',
+    value: 'pornhub',
+    version: '2.3.5',
+    icon: 'https://www.pornhub.com/favicon.ico',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
   },
 ];
 
@@ -41,7 +105,7 @@ const loadStoredSources = (): ProviderSource[] => {
   } catch (e) {
     console.warn('Failed to load stored sources:', e);
   }
-  return defaultSources;
+  return DEFAULT_SOURCES;
 };
 
 const saveStoredSources = (sources: ProviderSource[]) => {
@@ -54,9 +118,9 @@ const saveStoredSources = (sources: ProviderSource[]) => {
 
 export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   sources: loadStoredSources(),
-  activeSourceId: 'official-vega',
-  manifests: [],
-  activeProvider: null,
+  activeSourceId: 'zenda-official',
+  manifests: FALLBACK_MANIFESTS,
+  activeProvider: FALLBACK_MANIFESTS[0], // default: VMovies
   isLoading: false,
   error: null,
 
@@ -70,20 +134,20 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
     try {
       const { sources, activeSourceId } = get();
       const currentSource = sources.find((s) => s.id === activeSourceId) || sources[0];
-      const sourceUrl = customSourceUrl || currentSource?.url || DEFAULT_SOURCE_URL;
+      const sourceUrl = customSourceUrl || currentSource?.url || ZENDA_SOURCE_URL;
 
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const manifests = await engine.loadManifest(sourceUrl);
 
       // Determine active provider
       const storedActive = useSettingsStore.getState().activeProviderValue;
       let active = manifests.find((m) => m.value === storedActive && !m.disabled);
       if (!active) {
-        active = manifests.find((m) => !m.disabled) || manifests[0] || null;
+        active = manifests.find((m) => !m.disabled) || manifests[0] || FALLBACK_MANIFESTS[0];
       }
 
       set({
-        manifests,
+        manifests: manifests.length > 0 ? manifests : FALLBACK_MANIFESTS,
         activeProvider: active,
         isLoading: false,
       });
@@ -92,17 +156,24 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
         useSettingsStore.getState().setActiveProviderValue(active.value);
       }
     } catch (err: any) {
-      console.error('Failed to load provider manifests:', err);
+      console.warn('Failed to load live manifests, using verified fallbacks:', err);
+      // Keep verified fallback manifests
+      const fallbackActive = FALLBACK_MANIFESTS[0];
       set({
+        manifests: FALLBACK_MANIFESTS,
+        activeProvider: fallbackActive,
         isLoading: false,
-        error: err.message || 'Failed to load provider catalog',
       });
+      useSettingsStore.getState().setActiveProviderValue(fallbackActive.value);
     }
   },
 
   setActiveProvider: (value: string) => {
     const { manifests } = get();
-    const found = manifests.find((m) => m.value === value);
+    let found = manifests.find((m) => m.value === value);
+    if (!found) {
+      found = FALLBACK_MANIFESTS.find((m) => m.value === value);
+    }
     if (found) {
       set({ activeProvider: found });
       useSettingsStore.getState().setActiveProviderValue(value);
@@ -122,24 +193,23 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
     set({ sources: updated, activeSourceId: newSource.id });
     saveStoredSources(updated);
 
-    // Load providers from the new source
     await get().loadProviders(cleanUrl);
   },
 
   removeSource: (id: string) => {
     const updated = get().sources.filter((s) => s.id !== id);
-    if (updated.length === 0) return; // Keep at least one
+    if (updated.length === 0) return;
     const newActiveId = updated[0].id;
     set({ sources: updated, activeSourceId: newActiveId });
     saveStoredSources(updated);
     get().loadProviders(updated[0].url);
   },
 
-  setActiveSource: (id: string) => {
+  setActiveSource: async (id: string) => {
     const found = get().sources.find((s) => s.id === id);
     if (found) {
       set({ activeSourceId: id });
-      get().loadProviders(found.url);
+      await get().loadProviders(found.url);
     }
   },
 }));

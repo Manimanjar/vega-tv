@@ -39,7 +39,7 @@ export const ProviderTestDialog: React.FC<ProviderTestDialogProps> = ({
     setFailedStage(null);
 
     const run = async () => {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const results = await engine.testProvider(
         providerValue,
         sourceUrl,

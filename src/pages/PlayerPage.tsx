@@ -32,7 +32,7 @@ export const PlayerPage: React.FC = () => {
     setError(null);
 
     try {
-      const engine = ProviderEngine.getInstance(() => useSettingsStore.getState().corsProxyUrl);
+      const engine = ProviderEngine.getInstance();
       const resolved = await engine.getStream(provider, link, type);
 
       if (!resolved || resolved.length === 0) {
