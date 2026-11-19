@@ -15,6 +15,7 @@ import {
   Lock,
   Scaling,
   ListVideo,
+  Zap,
 } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
 import { QualitySelector, QualityOption } from './QualitySelector';
@@ -44,6 +45,7 @@ interface PlayerControlsProps {
   currentQuality: number;
   streams: Stream[];
   currentStreamIndex: number;
+  streamRoutingMode?: 'direct' | 'proxy';
   isVisible: boolean;
   episodes?: EpisodeItem[];
   currentEpisodeLink?: string;
@@ -55,6 +57,7 @@ interface PlayerControlsProps {
   onToggleFullscreen: () => void;
   onTogglePiP: () => void;
   onToggleLock: () => void;
+  onToggleRoutingMode?: () => void;
   onCycleAspectRatio: () => void;
   onSpeedChange: (speed: number) => void;
   onQualitySelect: (index: number) => void;
@@ -79,6 +82,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   currentQuality,
   streams,
   currentStreamIndex,
+  streamRoutingMode = 'direct',
   isVisible,
   episodes = [],
   currentEpisodeLink,
@@ -90,6 +94,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onToggleFullscreen,
   onTogglePiP,
   onToggleLock,
+  onToggleRoutingMode,
   onCycleAspectRatio,
   onSpeedChange,
   onQualitySelect,
@@ -162,6 +167,25 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
 
         {/* Top Controls Action Row */}
         <div className="flex items-center gap-2">
+          {/* Stream Speed Mode Pill */}
+          {onToggleRoutingMode && (
+            <button
+              type="button"
+              data-focusable="true"
+              data-nav-section="player-top"
+              onClick={onToggleRoutingMode}
+              title="Click to toggle Direct CDN (Full Speed) vs Edge Proxy"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all backdrop-blur-md ${
+                streamRoutingMode === 'direct'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>{streamRoutingMode === 'direct' ? 'Direct CDN (30+ Mbps)' : 'Edge Proxy'}</span>
+            </button>
+          )}
+
           {/* Episode Switcher (Series) */}
           {episodes.length > 1 && (
             <div className="relative">

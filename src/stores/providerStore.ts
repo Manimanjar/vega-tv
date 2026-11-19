@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { ProviderManifest, ProviderSource } from '../lib/providers/types';
-import { ProviderEngine, ZENDA_SOURCE_URL, MANIMANJAR_SOURCE_URL } from '../lib/providers/providerEngine';
+import {
+  ProviderEngine,
+  ZENDA_SOURCE_URL,
+  MANIMANJAR_SOURCE_URL,
+  normalizeSourceUrl,
+} from '../lib/providers/providerEngine';
 import { useSettingsStore } from './settingsStore';
 
 export interface ProviderStoreState {
@@ -127,7 +132,12 @@ const loadStoredSources = (): ProviderSource[] => {
     const raw = localStorage.getItem(SOURCES_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s) => ({
+          ...s,
+          url: normalizeSourceUrl(s.url),
+        }));
+      }
     }
   } catch (e) {
     console.warn('Failed to load stored sources:', e);

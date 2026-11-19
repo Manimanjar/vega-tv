@@ -65,6 +65,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('contain');
   const [seekRipple, setSeekRipple] = useState<{ side: 'left' | 'right'; text: string } | null>(null);
   const [autoNextDismissed, setAutoNextDismissed] = useState(false);
+  const [streamRoutingMode, setStreamRoutingMode] = useState<'direct' | 'proxy'>('direct');
+
+  const handleToggleRoutingMode = () => {
+    setStreamRoutingMode((prev) => (prev === 'direct' ? 'proxy' : 'direct'));
+  };
 
   const [qualities, setQualities] = useState<QualityOption[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 auto
@@ -112,15 +117,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const video = videoRef.current;
     setErrorMessage(null);
     setIsBuffering(true);
+    try {
+      (video as any).referrerPolicy = 'no-referrer';
+    } catch {}
 
-    // Format stream URL through smartProxy to bypass CORS & inject Referer headers
+    // In 'direct' mode: connect directly to CDN at full 20-30+ Mbps line speed
+    // In 'proxy' mode: route via smartProxy edge proxy
     const rawLink = activeStream.link;
-    const streamUrl = smartProxy.formatUrl(rawLink);
-
     const isHls =
       activeStream.type === 'm3u8' ||
       rawLink.includes('.m3u8') ||
       rawLink.includes('m3u8');
+
+    const streamUrl =
+      streamRoutingMode === 'direct'
+        ? rawLink
+        : smartProxy.formatUrl(rawLink);
 
     // Clean up previous HLS instance
     if (hlsRef.current) {
@@ -142,7 +154,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         backBufferLength: 90,
         maxBufferLength: 60,
         xhrSetup: (xhr, url) => {
-          // If the segment request is directly to CDN without proxy, route through proxy
           if (activeStream.headers) {
             Object.entries(activeStream.headers).forEach(([k, v]) => {
               try {
@@ -187,6 +198,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       hls.on(Hls.Events.ERROR, (_, data) => {
         console.warn('HLS stream error:', data);
         if (data.fatal) {
+          // If direct manifest failed due to CORS, auto-failover to Edge Proxy
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && streamRoutingMode === 'direct') {
+            console.log('[VideoPlayer] Direct HLS blocked by CORS, auto-failing over to Edge Proxy...');
+            setStreamRoutingMode('proxy');
+            return;
+          }
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               hls.startLoad();
@@ -215,11 +232,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       const onError = (e: any) => {
         console.warn('Direct stream playback error on server:', activeStream?.server, e);
+        // Direct CDN playback failed -> auto-failover to Edge Proxy
+        if (streamRoutingMode === 'direct') {
+          console.log('[VideoPlayer] Direct stream failed, auto-failing over to Edge Proxy...');
+          setStreamRoutingMode('proxy');
+          return;
+        }
+
         if (currentStreamIndex < streams.length - 1) {
           console.log(
             `Failing over from ${activeStream?.server} to next stream:`,
             streams[currentStreamIndex + 1]?.server
           );
+          setStreamRoutingMode('direct');
           setCurrentStreamIndex((prev) => prev + 1);
         } else {
           setIsBuffering(false);
@@ -239,7 +264,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         hlsRef.current = null;
       }
     };
-  }, [activeStream, contentId, getProgress]);
+  }, [activeStream, contentId, getProgress, streamRoutingMode, currentStreamIndex, streams]);
 
   // Video event handlers
   const handleTimeUpdate = () => {
@@ -625,6 +650,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         currentQuality={currentQuality}
         streams={streams}
         currentStreamIndex={currentStreamIndex}
+        streamRoutingMode={streamRoutingMode}
         isVisible={isControlsVisible}
         episodes={episodes}
         currentEpisodeLink={currentEpisodeLink}
@@ -636,6 +662,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onToggleFullscreen={handleToggleFullscreen}
         onTogglePiP={handleTogglePiP}
         onToggleLock={handleToggleLock}
+        onToggleRoutingMode={handleToggleRoutingMode}
         onCycleAspectRatio={handleCycleAspectRatio}
         onSpeedChange={handleSpeedChange}
         onQualitySelect={handleQualitySelect}

@@ -12,9 +12,21 @@ import {
 import { smartProxy } from './smartProxy';
 import { createKvStore } from './kvStore';
 
-export const ZENDA_SOURCE_URL = 'https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main';
-export const MANIMANJAR_SOURCE_URL = 'https://raw.githubusercontent.com/Manimanjar/vega-providers/main';
+export const ZENDA_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main';
+export const MANIMANJAR_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Manimanjar/vega-providers@main';
 export const DEFAULT_SOURCE_URL = ZENDA_SOURCE_URL;
+
+export function normalizeSourceUrl(url: string): string {
+  if (!url) return ZENDA_SOURCE_URL;
+  const clean = url.trim().replace(/\/+$/, '');
+  if (clean.includes('raw.githubusercontent.com/Zenda-Cross/vega-providers/main')) {
+    return ZENDA_SOURCE_URL;
+  }
+  if (clean.includes('raw.githubusercontent.com/Manimanjar/vega-providers/main')) {
+    return MANIMANJAR_SOURCE_URL;
+  }
+  return clean;
+}
 
 export class ProviderEngine {
   private static instance: ProviderEngine;
@@ -39,6 +51,8 @@ export class ProviderEngine {
       return this.dynamicUrls;
     }
     const endpoints = [
+      'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/urls.json',
+      'https://cdn.jsdelivr.net/gh/Manimanjar/vega-providers@main/urls.json',
       'https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main/urls.json',
       'https://raw.githubusercontent.com/Manimanjar/vega-providers/main/urls.json',
     ];
@@ -49,6 +63,7 @@ export class ProviderEngine {
           const data = await resp.json();
           this.dynamicUrls = { ...this.dynamicUrls, ...data };
           this.urlsLoaded = true;
+          break;
         }
       } catch {
         // continue
@@ -168,34 +183,45 @@ export class ProviderEngine {
   /**
    * Fetches manifest.json from source repository (GitHub raw has native CORS)
    */
+  /**
+   * Fetches manifest.json from source repository (jsDelivr high-speed CDN with multi-mirror failover)
+   */
   public async loadManifest(sourceUrl: string = DEFAULT_SOURCE_URL): Promise<ProviderManifest[]> {
-    const cleanUrl = sourceUrl.replace(/\/+$/, '');
+    const cleanUrl = normalizeSourceUrl(sourceUrl);
     if (this.manifests.has(cleanUrl)) {
       return this.manifests.get(cleanUrl)!;
     }
 
-    const manifestUrl = `${cleanUrl}/manifest.json`;
+    const candidateUrls = [
+      `${cleanUrl}/manifest.json`,
+      cleanUrl.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + '/manifest.json',
+    ];
 
-    try {
-      const directResp = await fetch(manifestUrl);
-      if (directResp.ok) {
-        const data = await directResp.json();
-        if (Array.isArray(data)) {
-          this.manifests.set(cleanUrl, data);
-          return data;
-        }
-      }
-    } catch (e) {
+    for (const manifestUrl of candidateUrls) {
       try {
-        const resp = await smartProxy.fetchWithFailover(manifestUrl);
-        const data = await resp.json();
-        if (Array.isArray(data)) {
-          this.manifests.set(cleanUrl, data);
-          return data;
+        const directResp = await fetch(manifestUrl);
+        if (directResp.ok) {
+          const data = await directResp.json();
+          if (Array.isArray(data) && data.length > 0) {
+            this.manifests.set(cleanUrl, data);
+            return data;
+          }
         }
-      } catch (err2) {
-        console.warn('[ProviderEngine] Manifest load failed from source:', manifestUrl, err2);
+      } catch {
+        // continue
       }
+    }
+
+    // Proxy failover
+    try {
+      const resp = await smartProxy.fetchWithFailover(`${cleanUrl}/manifest.json`);
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) {
+        this.manifests.set(cleanUrl, data);
+        return data;
+      }
+    } catch (err2) {
+      console.warn('[ProviderEngine] Manifest load failed from source:', cleanUrl, err2);
     }
 
     return [];
@@ -208,7 +234,7 @@ export class ProviderEngine {
     providerValue: string,
     sourceUrl: string = DEFAULT_SOURCE_URL
   ): Promise<LoadedProvider> {
-    const cleanSource = sourceUrl.replace(/\/+$/, '');
+    const cleanSource = normalizeSourceUrl(sourceUrl);
     const cacheKey = `${cleanSource}:${providerValue}`;
 
     if (this.loadedProviders.has(cacheKey)) {
@@ -242,36 +268,36 @@ export class ProviderEngine {
     }
 
     const fetchDistFile = async (fileName: string): Promise<string> => {
-      // 1. Try primary source
-      const fileUrl = `${cleanSource}/dist/${providerValue}/${fileName}`;
-      try {
-        const resp = await fetch(fileUrl);
-        if (resp.ok) {
-          const txt = await resp.text();
-          if (txt && !txt.includes('404: Not Found')) return txt;
+      const candidatePaths = [
+        `${cleanSource}/dist/${providerValue}/${fileName}`,
+        cleanSource.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
+        `${altSource}/dist/${providerValue}/${fileName}`,
+        altSource.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
+      ];
+
+      for (const fileUrl of candidatePaths) {
+        try {
+          const resp = await fetch(fileUrl);
+          if (resp.ok) {
+            const txt = await resp.text();
+            if (txt && !txt.includes('404: Not Found') && txt.length > 50) return txt;
+          }
+        } catch {
+          // continue
         }
-      } catch (err) {
+      }
+
+      // Try proxied fetch fallback
+      for (const fileUrl of candidatePaths.slice(0, 2)) {
         try {
           const proxyResp = await smartProxy.fetchWithFailover(fileUrl);
           if (proxyResp.ok) {
             const txt = await proxyResp.text();
-            if (txt && !txt.includes('404: Not Found')) return txt;
+            if (txt && !txt.includes('404: Not Found') && txt.length > 50) return txt;
           }
         } catch {
-          // ignore
+          // continue
         }
-      }
-
-      // 2. Try alternate source fallback
-      const altFileUrl = `${altSource}/dist/${providerValue}/${fileName}`;
-      try {
-        const altResp = await fetch(altFileUrl);
-        if (altResp.ok) {
-          const txt = await altResp.text();
-          if (txt && !txt.includes('404: Not Found')) return txt;
-        }
-      } catch {
-        // ignore
       }
 
       return '';
@@ -516,19 +542,35 @@ export class ProviderEngine {
     sourceUrl?: string
   ): Promise<Stream[]> {
     const loaded = await this.loadProvider(providerValue, sourceUrl);
+    const ctx = this.createContext(providerValue);
+    const baseUrl = await ctx.getBaseUrl();
+    const resolvedLink = link.startsWith('http')
+      ? link
+      : `${baseUrl.replace(/\/+$/, '')}/${link.replace(/^\/+/, '')}`;
+
     if (loaded.streamFn) {
-      const ctx = this.createContext(providerValue);
-      const streams = await loaded.streamFn(link, type, ctx);
-      if (Array.isArray(streams) && streams.length > 0) return streams;
+      try {
+        const streams = await loaded.streamFn(link, type, ctx);
+        if (Array.isArray(streams) && streams.length > 0) return streams;
+      } catch (e1) {
+        // Retry with fully resolved absolute link
+        if (resolvedLink !== link) {
+          try {
+            const streams2 = await loaded.streamFn(resolvedLink, type, ctx);
+            if (Array.isArray(streams2) && streams2.length > 0) return streams2;
+          } catch {}
+        }
+      }
     }
 
-    // If link is already a direct playable video URL
-    if (link.startsWith('http')) {
+    // Direct fallback if absolute link or resolved link exists
+    const targetLink = resolvedLink.startsWith('http') ? resolvedLink : link;
+    if (targetLink.startsWith('http')) {
       return [
         {
-          server: 'Direct CDN Stream',
-          link,
-          type: link.includes('m3u8') ? 'm3u8' : 'mp4',
+          server: 'Direct CDN Stream (Fast)',
+          link: targetLink,
+          type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
           quality: '1080',
         },
       ];

@@ -57,19 +57,30 @@ export const PlayerPage: React.FC = () => {
       setStreams(resolved);
       setIsLoading(false);
     } catch (err: any) {
-      console.error('Failed to extract stream:', err);
-      if (targetLink.startsWith('http')) {
-        setStreams([
-          {
-            server: 'Direct Stream',
-            link: targetLink,
-            type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
-            quality: 'Direct',
-          },
-        ]);
-        setIsLoading(false);
-        return;
-      }
+      console.warn('Primary stream extraction warning:', err);
+      try {
+        const engine = ProviderEngine.getInstance();
+        const ctx = engine.createContext(provider);
+        const base = await ctx.getBaseUrl();
+        const fullLink = targetLink.startsWith('http')
+          ? targetLink
+          : base
+          ? `${base.replace(/\/+$/, '')}/${targetLink.replace(/^\/+/, '')}`
+          : targetLink;
+
+        if (fullLink.startsWith('http')) {
+          setStreams([
+            {
+              server: 'Direct Stream (Failover)',
+              link: fullLink,
+              type: fullLink.includes('m3u8') ? 'm3u8' : 'mp4',
+              quality: 'Direct',
+            },
+          ]);
+          setIsLoading(false);
+          return;
+        }
+      } catch {}
 
       setError(
         err.message ||
