@@ -20,25 +20,52 @@ export interface ProviderStoreState {
   setActiveSource: (id: string) => Promise<void>;
 }
 
-const SOURCES_STORAGE_KEY = 'vega_provider_sources_v2';
+const SOURCES_STORAGE_KEY = 'vega_provider_sources_v3';
 
 export const DEFAULT_SOURCES: ProviderSource[] = [
+  {
+    id: 'custom-vega',
+    name: 'Vega Providers (Manimanjar)',
+    url: MANIMANJAR_SOURCE_URL,
+    enabled: true,
+  },
   {
     id: 'zenda-official',
     name: 'Movies & Series (Zenda Official)',
     url: ZENDA_SOURCE_URL,
     enabled: true,
   },
-  {
-    id: 'custom-vega',
-    name: 'Custom Streaming (Vega Providers)',
-    url: MANIMANJAR_SOURCE_URL,
-    enabled: true,
-  },
 ];
 
 // Fallback manifests available instantly offline
 const FALLBACK_MANIFESTS: ProviderManifest[] = [
+  {
+    display_name: 'XVideos',
+    value: 'xvideos',
+    version: '2.3.5',
+    icon: 'https://cdn-icons-png.flaticon.com/512/831/831331.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'Rule34Video',
+    value: 'rule34video',
+    version: '2.3.5',
+    icon: 'https://rule34video.com/apple-touch-icon.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'PornHub',
+    value: 'pornhub',
+    version: '2.3.5',
+    icon: 'https://www.pornhub.com/favicon.ico',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
   {
     display_name: 'VMovies',
     value: 'vega',
@@ -62,33 +89,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     value: 'drive',
     version: '2.30',
     icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'Rule34Video',
-    value: 'rule34video',
-    version: '2.3.5',
-    icon: 'https://rule34video.com/apple-touch-icon.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'XVideos',
-    value: 'xvideos',
-    version: '2.3.5',
-    icon: 'https://cdn-icons-png.flaticon.com/512/831/831331.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'PornHub',
-    value: 'pornhub',
-    version: '2.3.5',
-    icon: 'https://www.pornhub.com/favicon.ico',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -118,9 +118,9 @@ const saveStoredSources = (sources: ProviderSource[]) => {
 
 export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   sources: loadStoredSources(),
-  activeSourceId: 'zenda-official',
-  manifests: FALLBACK_MANIFESTS,
-  activeProvider: FALLBACK_MANIFESTS[0], // default: VMovies
+  activeSourceId: 'custom-vega',
+  manifests: FALLBACK_MANIFESTS.slice(0, 3),
+  activeProvider: FALLBACK_MANIFESTS[0], // default: XVideos / Rule34Video
   isLoading: false,
   error: null,
 
@@ -134,7 +134,7 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
     try {
       const { sources, activeSourceId } = get();
       const currentSource = sources.find((s) => s.id === activeSourceId) || sources[0];
-      const sourceUrl = customSourceUrl || currentSource?.url || ZENDA_SOURCE_URL;
+      const sourceUrl = customSourceUrl || currentSource?.url || MANIMANJAR_SOURCE_URL;
 
       const engine = ProviderEngine.getInstance();
       const manifests = await engine.loadManifest(sourceUrl);
@@ -156,8 +156,7 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
         useSettingsStore.getState().setActiveProviderValue(active.value);
       }
     } catch (err: any) {
-      console.warn('Failed to load live manifests, using verified fallbacks:', err);
-      // Keep verified fallback manifests
+      console.warn('Failed to load live manifests, using fallbacks:', err);
       const fallbackActive = FALLBACK_MANIFESTS[0];
       set({
         manifests: FALLBACK_MANIFESTS,

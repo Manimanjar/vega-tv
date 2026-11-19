@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Menu, Search, Layers, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Menu, Search, Layers, RefreshCw, Radio, Zap } from 'lucide-react';
 import { useProviderStore } from '../../stores/providerStore';
 import { useContentStore } from '../../stores/contentStore';
 import { ProviderDrawer } from './ProviderDrawer';
 import { ProviderTestDialog } from '../modals/ProviderTestProgress';
+import { ProxySettingsModal } from '../modals/ProxySettingsModal';
+import { smartProxy } from '../../lib/providers/smartProxy';
 
 interface TopBarProps {
   title?: string;
@@ -15,12 +17,20 @@ export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [testProviderValue, setTestProviderValue] = useState<string | null>(null);
+  const [hasProxy, setHasProxy] = useState(false);
 
   const { activeProvider, activeSourceId } = useProviderStore();
   const { loadHomeContent, isLoadingHome, catalogs, activeCategoryFilter, setActiveCategoryFilter } = useContentStore();
 
   const isHome = location.pathname === '/';
+
+  useEffect(() => {
+    return smartProxy.subscribe((proxyUrl, isConnected) => {
+      setHasProxy(isConnected || !!proxyUrl);
+    });
+  }, []);
 
   return (
     <>
@@ -82,6 +92,26 @@ export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
 
           {/* Quick Actions & Active Provider Pill */}
           <div className="flex items-center gap-2">
+            {/* Proxy Status Pill */}
+            <button
+              type="button"
+              aria-label="Proxy Settings"
+              data-focusable="true"
+              data-nav-section="top-bar"
+              onClick={() => setProxyModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-vega-surface2 hover:bg-vega-surface3 border border-white/5 text-xs text-white/80 hover:text-white transition-all shadow-sm"
+              title="CORS & Streaming Proxy Configuration"
+            >
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  hasProxy ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                }`}
+              />
+              <span className="hidden sm:inline font-medium">
+                {hasProxy ? 'Proxy' : 'Connect Proxy'}
+              </span>
+            </button>
+
             {/* Quick Search Button */}
             <button
               type="button"
@@ -149,7 +179,7 @@ export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
             >
               All Categories
             </button>
-            {catalogs.slice(0, 8).map((cat) => {
+            {catalogs.slice(0, 10).map((cat) => {
               const isSelected = activeCategoryFilter === cat.filter;
               return (
                 <button
@@ -173,10 +203,20 @@ export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
       <ProviderDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        onOpenProxyModal={() => {
+          setDrawerOpen(false);
+          setProxyModalOpen(true);
+        }}
         onOpenTestModal={(val) => {
           setDrawerOpen(false);
           setTestProviderValue(val);
         }}
+      />
+
+      {/* Proxy Settings Modal */}
+      <ProxySettingsModal
+        isOpen={proxyModalOpen}
+        onClose={() => setProxyModalOpen(false)}
       />
 
       {/* Provider Test Modal */}

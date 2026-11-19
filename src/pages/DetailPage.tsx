@@ -65,7 +65,7 @@ export const DetailPage: React.FC = () => {
         playTitle
       )}&poster=${encodeURIComponent(detail.poster || detail.image)}&provider=${
         activeProvider?.value || 'unknown'
-      }&type=${detail.type || 'movie'}`
+      }&type=${detail.type || 'movie'}&infoUrl=${encodeURIComponent(link)}`
     );
   };
 

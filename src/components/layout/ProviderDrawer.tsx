@@ -9,12 +9,14 @@ interface ProviderDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenTestModal: (providerValue: string) => void;
+  onOpenProxyModal?: () => void;
 }
 
 export const ProviderDrawer: React.FC<ProviderDrawerProps> = ({
   isOpen,
   onClose,
   onOpenTestModal,
+  onOpenProxyModal,
 }) => {
   const { sources, activeSourceId, manifests, activeProvider, setActiveProvider, setActiveSource, loadProviders, isLoading } =
     useProviderStore();
@@ -64,8 +66,11 @@ export const ProviderDrawer: React.FC<ProviderDrawerProps> = ({
             </button>
           </div>
 
-          {/* Proxy Status Indicator */}
-          <div className="px-5 py-3 bg-vega-surface2/50 border-b border-white/5 flex items-center justify-between">
+          {/* Proxy Status Indicator (Clickable to open proxy modal) */}
+          <div
+            onClick={onOpenProxyModal}
+            className="px-5 py-3 bg-vega-surface2/50 hover:bg-vega-surface2 border-b border-white/5 flex items-center justify-between cursor-pointer transition-colors"
+          >
             <div className="flex items-center gap-2">
               <div
                 className={`w-2 h-2 rounded-full ${
@@ -73,11 +78,11 @@ export const ProviderDrawer: React.FC<ProviderDrawerProps> = ({
                 }`}
               />
               <span className="text-xs text-white/90">
-                {corsProxyUrl ? 'Smart Proxy Connected' : 'Auto Proxy Fallback Active'}
+                {corsProxyUrl ? 'Streaming Proxy Active' : 'Auto Local/Edge Proxy Active'}
               </span>
             </div>
             <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              Live
+              Settings ›
             </span>
           </div>
 

@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ProviderEngine } from '../lib/providers/providerEngine';
-import { Stream } from '../lib/providers/types';
+import { Stream, Info } from '../lib/providers/types';
 import { VideoPlayer } from '../components/player/VideoPlayer';
-import { useSettingsStore } from '../stores/settingsStore';
 import { ArrowLeft, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 
 export const PlayerPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const link = searchParams.get('link') || '';
@@ -16,13 +15,17 @@ export const PlayerPage: React.FC = () => {
   const poster = searchParams.get('poster') || '';
   const provider = searchParams.get('provider') || '';
   const type = searchParams.get('type') || 'movie';
+  const infoUrl = searchParams.get('infoUrl') || '';
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchStreams = async () => {
-    if (!link) {
+  const [metaInfo, setMetaInfo] = useState<Info | null>(null);
+
+  // Load stream links
+  const fetchStreams = async (targetLink: string = link) => {
+    if (!targetLink) {
       setError('No playback link provided');
       setIsLoading(false);
       return;
@@ -33,16 +36,15 @@ export const PlayerPage: React.FC = () => {
 
     try {
       const engine = ProviderEngine.getInstance();
-      const resolved = await engine.getStream(provider, link, type);
+      const resolved = await engine.getStream(provider, targetLink, type);
 
       if (!resolved || resolved.length === 0) {
-        // Fallback: if link is already direct m3u8 or mp4
-        if (link.startsWith('http')) {
+        if (targetLink.startsWith('http')) {
           setStreams([
             {
               server: 'Direct Link',
-              link,
-              type: link.includes('m3u8') ? 'm3u8' : 'mp4',
+              link: targetLink,
+              type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
               quality: 'Original',
             },
           ]);
@@ -56,13 +58,12 @@ export const PlayerPage: React.FC = () => {
       setIsLoading(false);
     } catch (err: any) {
       console.error('Failed to extract stream:', err);
-      // Fallback check: if link is a direct video url
-      if (link.startsWith('http') && (link.includes('.m3u8') || link.includes('.mp4'))) {
+      if (targetLink.startsWith('http')) {
         setStreams([
           {
             server: 'Direct Stream',
-            link,
-            type: link.includes('m3u8') ? 'm3u8' : 'mp4',
+            link: targetLink,
+            type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
             quality: 'Direct',
           },
         ]);
@@ -72,23 +73,71 @@ export const PlayerPage: React.FC = () => {
 
       setError(
         err.message ||
-          'Failed to resolve stream link. You may need a configured CORS proxy.'
+          'Failed to resolve stream link. You may need an active CORS proxy.'
       );
       setIsLoading(false);
     }
   };
 
+  // Load metadata for series episode list if infoUrl or link available
   useEffect(() => {
-    fetchStreams();
+    const metaTarget = infoUrl || link;
+    if (metaTarget && provider) {
+      const engine = ProviderEngine.getInstance();
+      engine
+        .getMeta(provider, metaTarget)
+        .then((m) => setMetaInfo(m))
+        .catch(() => {});
+    }
+  }, [infoUrl, link, provider]);
+
+  useEffect(() => {
+    fetchStreams(link);
   }, [link, provider, type]);
+
+  // Derive flat list of episodes from metaInfo
+  const allEpisodes = React.useMemo(() => {
+    if (!metaInfo?.linkList) return [];
+    const list: { title: string; link: string }[] = [];
+    metaInfo.linkList.forEach((group) => {
+      group.directLinks?.forEach((item) => {
+        list.push({
+          title: item.title || group.title,
+          link: item.link,
+        });
+      });
+    });
+    return list;
+  }, [metaInfo]);
+
+  // Determine next episode
+  const nextEpisode = React.useMemo(() => {
+    if (allEpisodes.length === 0) return undefined;
+    const currentIndex = allEpisodes.findIndex((e) => e.link === link);
+    if (currentIndex >= 0 && currentIndex < allEpisodes.length - 1) {
+      return allEpisodes[currentIndex + 1];
+    }
+    return undefined;
+  }, [allEpisodes, link]);
+
+  const handleSelectEpisode = (ep: { title: string; link: string }) => {
+    setSearchParams({
+      link: ep.link,
+      title: `${metaInfo?.title || title} - ${ep.title}`,
+      poster,
+      provider,
+      type,
+      infoUrl: infoUrl || link,
+    });
+  };
 
   if (isLoading) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
         <div className="w-16 h-16 border-4 border-vega-ctaPrimary/30 border-t-vega-ctaPrimary rounded-full animate-spin mb-4" />
-        <h2 className="text-lg font-bold text-white mb-1">Loading Video Stream...</h2>
+        <h2 className="text-lg font-bold text-white mb-1">Connecting Stream Server...</h2>
         <p className="text-xs text-vega-textSecondary max-w-sm text-center">
-          Connecting to provider source and resolving media endpoints.
+          Resolving media endpoints with high-speed proxy routing.
         </p>
       </div>
     );
@@ -105,7 +154,7 @@ export const PlayerPage: React.FC = () => {
           {error || 'No stream URLs were found for this item.'}
         </p>
         <div className="flex gap-3">
-          <Button variant="primary" onClick={fetchStreams}>
+          <Button variant="primary" onClick={() => fetchStreams(link)}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Retry
           </Button>
@@ -126,6 +175,10 @@ export const PlayerPage: React.FC = () => {
         poster={poster}
         contentId={link}
         providerValue={provider}
+        episodes={allEpisodes}
+        currentEpisodeLink={link}
+        nextEpisode={nextEpisode}
+        onSelectEpisode={handleSelectEpisode}
         onBack={() => navigate(-1)}
       />
     </div>

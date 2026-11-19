@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useContentStore } from '../stores/contentStore';
 import { useProviderStore } from '../stores/providerStore';
@@ -9,12 +9,14 @@ import { ScrollRow } from '../components/ui/ScrollRow';
 import { HeroSkeleton } from '../components/skeletons/HeroSkeleton';
 import { PosterSkeleton } from '../components/skeletons/PosterSkeleton';
 import { Button } from '../components/ui/Button';
-import { Film, Play, Sparkles } from 'lucide-react';
+import { ProxySettingsModal } from '../components/modals/ProxySettingsModal';
+import { Play, Sparkles, RefreshCw, Radio, Layers } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const [proxyModalOpen, setProxyModalOpen] = useState(false);
 
-  const { activeProvider, isProviderLoading, manifests } = useProviderStore() as any;
+  const { activeProvider, isLoading: isProviderLoading } = useProviderStore();
   const {
     catalogs,
     categoryPosts,
@@ -22,18 +24,19 @@ export const HomePage: React.FC = () => {
     activeCategoryFilter,
     isLoadingHome,
     loadHomeContent,
+    error,
   } = useContentStore();
 
   const continueWatching = useWatchHistoryStore((state) => state.getContinueWatchingList());
 
   useEffect(() => {
-    if (activeProvider) {
+    if (activeProvider?.value) {
       loadHomeContent();
     }
   }, [activeProvider?.value]);
 
-  // Loading skeleton shown only on initial cold boot before preloaded data mounts
-  if (isProviderLoading && heroPosts.length === 0) {
+  // Loading skeleton shown while initial content is loading
+  if ((isLoadingHome || isProviderLoading) && heroPosts.length === 0) {
     return (
       <div className="pt-2 pb-24">
         <HeroSkeleton />
@@ -59,6 +62,10 @@ export const HomePage: React.FC = () => {
   const displayedCatalogs = activeCategoryFilter
     ? catalogs.filter((c) => c.filter === activeCategoryFilter)
     : catalogs;
+
+  const hasAnyPosts = displayedCatalogs.some(
+    (cat) => (categoryPosts[cat.filter] || []).length > 0
+  );
 
   return (
     <div className="min-h-screen pb-24">
@@ -150,7 +157,7 @@ export const HomePage: React.FC = () => {
             }
             navSection={`cat-row-${idx}`}
           >
-            {posts.slice(0, 16).map((post, pIdx) => (
+            {posts.slice(0, 18).map((post, pIdx) => (
               <PosterCard
                 key={`${post.link}-${pIdx}`}
                 post={post}
@@ -161,26 +168,45 @@ export const HomePage: React.FC = () => {
         );
       })}
 
-      {/* Fallback Banner if all categories currently empty */}
-      {displayedCatalogs.every((cat) => (categoryPosts[cat.filter] || []).length === 0) && (
-        <div className="min-h-[50vh] flex flex-col items-center justify-center text-center p-6">
-          <div className="w-14 h-14 rounded-2xl bg-vega-surface2 flex items-center justify-center mb-4 text-vega-ctaPrimary shadow-lg">
-            <Sparkles className="w-7 h-7" />
+      {/* Fallback Banner if all categories currently empty and not loading */}
+      {!hasAnyPosts && !isLoadingHome && (
+        <div className="min-h-[55vh] flex flex-col items-center justify-center text-center p-6 max-w-lg mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-vega-surface2 flex items-center justify-center mb-4 text-vega-ctaPrimary shadow-xl border border-white/5">
+            <Sparkles className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">Switch Provider to View Content</h3>
-          <p className="text-sm text-vega-textSecondary max-w-sm mb-6 leading-relaxed">
-            Choose from official Zenda providers (VMovies, MultiStream) or custom sources in the top menu.
+          <h3 className="text-xl font-bold text-white mb-2">
+            {error ? 'Content Loading Notice' : 'Ready to Stream'}
+          </h3>
+          <p className="text-xs sm:text-sm text-vega-textSecondary mb-6 leading-relaxed">
+            {error ||
+              `Currently selected: ${activeProvider?.display_name || 'Vega'}. Ensure your proxy is running or choose another streaming provider.`}
           </p>
-          <div className="flex gap-3">
-            <Button variant="primary" onClick={() => loadHomeContent()}>
-              Refresh Feeds
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button
+              variant="primary"
+              onClick={() => loadHomeContent()}
+              className="gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Retry Feeds</span>
             </Button>
-            <Button variant="secondary" onClick={() => navigate('/settings')}>
-              Manage Sources
+            <Button
+              variant="secondary"
+              onClick={() => setProxyModalOpen(true)}
+              className="gap-2"
+            >
+              <Radio className="w-4 h-4 text-emerald-400" />
+              <span>Proxy Setup</span>
             </Button>
           </div>
         </div>
       )}
+
+      {/* Proxy Settings Modal */}
+      <ProxySettingsModal
+        isOpen={proxyModalOpen}
+        onClose={() => setProxyModalOpen(false)}
+      />
     </div>
   );
 };

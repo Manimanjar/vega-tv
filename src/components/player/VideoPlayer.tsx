@@ -1,10 +1,17 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
 import { Stream } from '../../lib/providers/types';
-import { PlayerControls } from './PlayerControls';
+import { PlayerControls, AspectRatioMode } from './PlayerControls';
 import { QualityOption } from './QualitySelector';
 import { useWatchHistoryStore } from '../../stores/watchHistoryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { smartProxy } from '../../lib/providers/smartProxy';
+import { Lock, Unlock, Play, X, RotateCcw, RotateCw } from 'lucide-react';
+
+interface EpisodeItem {
+  title: string;
+  link: string;
+}
 
 interface VideoPlayerProps {
   streams: Stream[];
@@ -12,6 +19,10 @@ interface VideoPlayerProps {
   poster?: string;
   contentId: string;
   providerValue: string;
+  episodes?: EpisodeItem[];
+  currentEpisodeLink?: string;
+  nextEpisode?: EpisodeItem;
+  onSelectEpisode?: (ep: EpisodeItem) => void;
   onBack: () => void;
   onEnded?: () => void;
 }
@@ -22,6 +33,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   poster,
   contentId,
   providerValue,
+  episodes = [],
+  currentEpisodeLink,
+  nextEpisode,
+  onSelectEpisode,
   onBack,
   onEnded,
 }) => {
@@ -30,6 +45,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimerRef = useRef<any>(null);
   const lastProgressSavedRef = useRef<number>(0);
+  const lastTapTimeRef = useRef<number>(0);
 
   const [currentStreamIndex, setCurrentStreamIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -43,6 +59,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // New features matching Vega App
+  const [isLocked, setIsLocked] = useState(false);
+  const [showUnlockPill, setShowUnlockPill] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('contain');
+  const [seekRipple, setSeekRipple] = useState<{ side: 'left' | 'right'; text: string } | null>(null);
+  const [autoNextDismissed, setAutoNextDismissed] = useState(false);
+
   const [qualities, setQualities] = useState<QualityOption[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 auto
 
@@ -53,27 +76,51 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Show controls and reset hide timer
   const showControls = useCallback(() => {
+    if (isLocked) {
+      setShowUnlockPill(true);
+      setTimeout(() => setShowUnlockPill(false), 3000);
+      return;
+    }
+
     setIsControlsVisible(true);
     if (hideControlsTimerRef.current) {
       clearTimeout(hideControlsTimerRef.current);
     }
     hideControlsTimerRef.current = setTimeout(() => {
       setIsControlsVisible(false);
-    }, 3500);
-  }, []);
+    }, 4000);
+  }, [isLocked]);
 
-  // Initialize playback source
+  // Cycle aspect ratio mode (fit -> fill -> stretch)
+  const handleCycleAspectRatio = () => {
+    setAspectRatio((prev) => {
+      if (prev === 'contain') return 'cover';
+      if (prev === 'cover') return 'fill';
+      return 'contain';
+    });
+  };
+
+  // Toggle touch lock
+  const handleToggleLock = () => {
+    setIsLocked((prev) => !prev);
+    setIsControlsVisible(false);
+  };
+
+  // Initialize playback source with smartProxy routing
   useEffect(() => {
     if (!activeStream || !videoRef.current) return;
     const video = videoRef.current;
     setErrorMessage(null);
     setIsBuffering(true);
 
-    const streamUrl = activeStream.link;
+    // Format stream URL through smartProxy to bypass CORS & inject Referer headers
+    const rawLink = activeStream.link;
+    const streamUrl = smartProxy.formatUrl(rawLink);
+
     const isHls =
       activeStream.type === 'm3u8' ||
-      streamUrl.includes('.m3u8') ||
-      streamUrl.includes('m3u8');
+      rawLink.includes('.m3u8') ||
+      rawLink.includes('m3u8');
 
     // Clean up previous HLS instance
     if (hlsRef.current) {
@@ -92,14 +139,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 60,
-        xhrSetup: (xhr) => {
+        backBufferLength: 90,
+        maxBufferLength: 60,
+        xhrSetup: (xhr, url) => {
+          // If the segment request is directly to CDN without proxy, route through proxy
           if (activeStream.headers) {
             Object.entries(activeStream.headers).forEach(([k, v]) => {
               try {
                 xhr.setRequestHeader(k, v);
-              } catch (e) {
-                // Ignore restricted header errors
+              } catch {
+                // Ignore restricted headers
               }
             });
           }
@@ -136,7 +185,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
-        console.warn('HLS error:', data);
+        console.warn('HLS stream error:', data);
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -146,7 +195,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               hls.recoverMediaError();
               break;
             default:
-              setErrorMessage('Failed to play stream. Try switching stream server.');
+              setErrorMessage('Playback error. Please try switching servers or check proxy.');
               break;
           }
         }
@@ -164,7 +213,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.play().catch(() => setIsPlaying(false));
       };
 
+      const onError = () => {
+        setIsBuffering(false);
+        setErrorMessage('Failed to load video stream. Tap below to switch server.');
+      };
+
       video.addEventListener('loadedmetadata', onLoaded, { once: true });
+      video.addEventListener('error', onError, { once: true });
     }
 
     return () => {
@@ -186,6 +241,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // Calculate buffered range
     if (videoRef.current.buffered.length > 0) {
       setBuffered(videoRef.current.buffered.end(videoRef.current.buffered.length - 1));
+    }
+
+    // Auto next trigger check
+    if (dur > 30 && dur - cur <= 15 && nextEpisode && !autoNextDismissed) {
+      // Show auto next card
     }
 
     // Save progress throttled to every 5 seconds
@@ -227,6 +287,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const target = Math.max(0, Math.min(duration, videoRef.current.currentTime + delta));
     videoRef.current.currentTime = target;
     setCurrentTime(target);
+
+    // Trigger visual ripple indicator
+    setSeekRipple({
+      side: delta > 0 ? 'right' : 'left',
+      text: delta > 0 ? `+${delta}s` : `${delta}s`,
+    });
+    setTimeout(() => setSeekRipple(null), 700);
+
     showControls();
   };
 
@@ -296,34 +364,61 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setPlaybackSpeed(speed);
   };
 
-  // Double tap handler for seeking (mobile/tablet)
-  const handleDoubleTap = (e: React.MouseEvent<HTMLVideoElement>) => {
+  // Double tap / click handler for mobile and touch
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isLocked) {
+      setShowUnlockPill(true);
+      setTimeout(() => setShowUnlockPill(false), 3000);
+      return;
+    }
+
+    const now = Date.now();
+    const timeDiff = now - lastTapTimeRef.current;
+    lastTapTimeRef.current = now;
+
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    if (clickX < rect.width * 0.35) {
-      handleSkip(-10);
-    } else if (clickX > rect.width * 0.65) {
-      handleSkip(10);
+
+    if (timeDiff < 300) {
+      // Double tap detected
+      if (clickX < rect.width * 0.35) {
+        handleSkip(-10);
+      } else if (clickX > rect.width * 0.65) {
+        handleSkip(10);
+      } else {
+        handlePlayPause();
+      }
     } else {
-      handlePlayPause();
+      // Single tap toggles controls
+      if (isControlsVisible) {
+        setIsControlsVisible(false);
+      } else {
+        showControls();
+      }
     }
   };
 
-  // Keyboard controls
+  // Keyboard controls for desktop & Smart TV
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       showControls();
       switch (e.key) {
         case ' ':
+        case 'k':
+        case 'K':
           e.preventDefault();
           handlePlayPause();
           break;
         case 'ArrowLeft':
+        case 'j':
+        case 'J':
           e.preventDefault();
           handleSkip(-10);
           break;
         case 'ArrowRight':
+        case 'l':
+        case 'L':
           e.preventDefault();
           handleSkip(10);
           break;
@@ -345,21 +440,36 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           e.preventDefault();
           handleToggleMute();
           break;
+        case 'Escape':
+          if (isFullscreen) {
+            handleToggleFullscreen();
+          } else {
+            onBack();
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [volume, showControls]);
+  }, [volume, showControls, isFullscreen, onBack]);
+
+  const remainingSeconds = Math.max(0, Math.ceil(duration - currentTime));
+  const showAutoNext =
+    duration > 30 &&
+    remainingSeconds <= 15 &&
+    remainingSeconds > 0 &&
+    nextEpisode &&
+    !autoNextDismissed;
 
   return (
     <div
       ref={containerRef}
       onMouseMove={showControls}
-      onTouchStart={showControls}
+      onClick={handleContainerClick}
       className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden select-none"
     >
-      {/* HTML5 Video */}
+      {/* HTML5 Video Element with Aspect Ratio mode */}
       <video
         ref={videoRef}
         poster={poster}
@@ -369,27 +479,106 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onTimeUpdate={handleTimeUpdate}
         onWaiting={() => setIsBuffering(true)}
         onPlaying={() => setIsBuffering(false)}
-        onEnded={onEnded}
-        onClick={handleDoubleTap}
-        className="w-full h-full object-contain cursor-pointer"
+        onEnded={() => {
+          if (nextEpisode && onSelectEpisode) {
+            onSelectEpisode(nextEpisode);
+          } else if (onEnded) {
+            onEnded();
+          }
+        }}
+        className={`w-full h-full ${
+          aspectRatio === 'cover'
+            ? 'object-cover'
+            : aspectRatio === 'fill'
+            ? 'object-fill'
+            : 'object-contain'
+        }`}
       />
+
+      {/* Double Tap Seek Animation Ripples */}
+      {seekRipple && (
+        <div
+          className={`absolute inset-y-0 w-1/3 flex items-center justify-center pointer-events-none z-20 ${
+            seekRipple.side === 'left' ? 'left-0 bg-white/5 rounded-r-full' : 'right-0 bg-white/5 rounded-l-full'
+          } animate-pulse`}
+        >
+          <div className="flex flex-col items-center gap-1.5 p-4 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
+            {seekRipple.side === 'left' ? (
+              <RotateCcw className="w-8 h-8 text-white animate-spin" />
+            ) : (
+              <RotateCw className="w-8 h-8 text-white animate-spin" />
+            )}
+            <span className="text-sm font-bold text-white">{seekRipple.text}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Unlock Pill when Locked */}
+      {isLocked && showUnlockPill && (
+        <div className="absolute top-8 z-40 animate-bounce">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsLocked(false);
+              setIsControlsVisible(true);
+            }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText font-bold text-sm shadow-2xl border border-white/20 active:scale-95 transition-transform"
+          >
+            <Unlock className="w-4 h-4" />
+            <span>Tap to Unlock Screen</span>
+          </button>
+        </div>
+      )}
 
       {/* Buffering Spinner */}
       {isBuffering && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-          <div className="w-14 h-14 border-4 border-vega-ctaPrimary/30 border-t-vega-ctaPrimary rounded-full animate-spin" />
+          <div className="w-16 h-16 border-4 border-vega-ctaPrimary/30 border-t-vega-ctaPrimary rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Auto Next Episode Countdown Card */}
+      {showAutoNext && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-24 right-6 sm:right-10 z-40 bg-vega-surface1/95 border border-white/15 rounded-2xl p-4 shadow-2xl backdrop-blur-xl flex flex-col gap-3 max-w-xs animate-slide-up"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-vega-ctaPrimary">
+              Up Next in {remainingSeconds}s
+            </span>
+            <button
+              onClick={() => setAutoNextDismissed(true)}
+              className="text-white/60 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="text-xs font-semibold text-white truncate">
+            {nextEpisode.title}
+          </div>
+          <button
+            onClick={() => onSelectEpisode?.(nextEpisode)}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-vega-ctaPrimary text-vega-ctaText text-xs font-bold shadow-md hover:bg-white transition-colors"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Play Next Episode</span>
+          </button>
         </div>
       )}
 
       {/* Error state */}
       {errorMessage && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-6 z-40 text-center">
-          <div className="w-12 h-12 rounded-full bg-vega-error flex items-center justify-center mb-4">
-            <span className="text-xl font-bold">!</span>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 p-6 z-40 text-center"
+        >
+          <div className="w-14 h-14 rounded-2xl bg-vega-surface2 flex items-center justify-center mb-4 text-vega-error border border-vega-error/30">
+            <span className="text-2xl font-bold">!</span>
           </div>
           <h2 className="text-lg font-bold text-white mb-2">{errorMessage}</h2>
           <p className="text-sm text-vega-textSecondary mb-6 max-w-sm">
-            Check your CORS proxy configuration or select another video source.
+            Check your CORS proxy configuration or switch to another server.
           </p>
           <div className="flex gap-3">
             <button
@@ -408,7 +597,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Overlay controls */}
+      {/* Overlay controls matching Vega App */}
       <PlayerControls
         title={title}
         isPlaying={isPlaying}
@@ -418,12 +607,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         volume={volume}
         isMuted={isMuted}
         isFullscreen={isFullscreen}
+        isLocked={isLocked}
+        aspectRatio={aspectRatio}
         playbackSpeed={playbackSpeed}
         qualities={qualities}
         currentQuality={currentQuality}
         streams={streams}
         currentStreamIndex={currentStreamIndex}
         isVisible={isControlsVisible}
+        episodes={episodes}
+        currentEpisodeLink={currentEpisodeLink}
         onPlayPause={handlePlayPause}
         onSeek={handleSeek}
         onSkip={handleSkip}
@@ -431,9 +624,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onToggleMute={handleToggleMute}
         onToggleFullscreen={handleToggleFullscreen}
         onTogglePiP={handleTogglePiP}
+        onToggleLock={handleToggleLock}
+        onCycleAspectRatio={handleCycleAspectRatio}
         onSpeedChange={handleSpeedChange}
         onQualitySelect={handleQualitySelect}
         onStreamSelect={handleStreamSelect}
+        onEpisodeSelect={onSelectEpisode}
         onBack={onBack}
       />
     </div>

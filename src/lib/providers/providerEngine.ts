@@ -7,11 +7,10 @@ import {
   Stream,
   ProviderContext,
   LoadedProvider,
-  TestStage
+  TestStage,
 } from './types';
 import { smartProxy } from './smartProxy';
 import { createKvStore } from './kvStore';
-import { PRELOADED_DATA } from './preloadedData';
 
 export const ZENDA_SOURCE_URL = 'https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main';
 export const MANIMANJAR_SOURCE_URL = 'https://raw.githubusercontent.com/Manimanjar/vega-providers/main';
@@ -35,7 +34,7 @@ export class ProviderEngine {
     return {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept':
+      Accept:
         'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
     };
@@ -94,9 +93,10 @@ export class ProviderEngine {
         'fetch',
         'axios',
         'cheerio',
+        'globalThis',
         code
       );
-      runner(module, exports, require, proxiedFetch, proxiedAxios, cheerio);
+      runner(module, exports, require, proxiedFetch, proxiedAxios, cheerio, window);
       return module.exports;
     } catch (err: any) {
       console.warn(`Error evaluating ${fileName}:`, err);
@@ -105,7 +105,7 @@ export class ProviderEngine {
   }
 
   /**
-   * Fetches manifest.json from source repository (GitHub raw has native CORS!)
+   * Fetches manifest.json from source repository (GitHub raw has native CORS)
    */
   public async loadManifest(sourceUrl: string = DEFAULT_SOURCE_URL): Promise<ProviderManifest[]> {
     const cleanUrl = sourceUrl.replace(/\/+$/, '');
@@ -116,7 +116,6 @@ export class ProviderEngine {
     const manifestUrl = `${cleanUrl}/manifest.json`;
 
     try {
-      // Direct fetch first since GitHub raw supports CORS natively
       const directResp = await fetch(manifestUrl);
       if (directResp.ok) {
         const data = await directResp.json();
@@ -126,7 +125,6 @@ export class ProviderEngine {
         }
       }
     } catch (e) {
-      // Try with smartProxy fallback
       try {
         const resp = await smartProxy.fetchWithFailover(manifestUrl);
         const data = await resp.json();
@@ -135,7 +133,7 @@ export class ProviderEngine {
           return data;
         }
       } catch (err2) {
-        console.warn('Manifest load failed from source:', manifestUrl, err2);
+        console.warn('[ProviderEngine] Manifest load failed from source:', manifestUrl, err2);
       }
     }
 
@@ -184,19 +182,17 @@ export class ProviderEngine {
     const fetchDistFile = async (fileName: string): Promise<string> => {
       const fileUrl = `${cleanSource}/dist/${providerValue}/${fileName}`;
       try {
-        // Direct fetch from GitHub raw
         const resp = await fetch(fileUrl);
         if (resp.ok) {
           return await resp.text();
         }
       } catch (err) {
-        // Fallback through proxy
         try {
           const proxyResp = await smartProxy.fetchWithFailover(fileUrl);
           if (proxyResp.ok) {
             return await proxyResp.text();
           }
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
@@ -241,7 +237,13 @@ export class ProviderEngine {
       if (typeof rawPosts === 'function') {
         postsFn = async (filter: string, page: number, ctx: ProviderContext) => {
           try {
-            return await rawPosts({ filter, page, providerContext: ctx });
+            return await rawPosts({
+              filter,
+              page,
+              providerValue,
+              signal: new AbortController().signal,
+              providerContext: ctx,
+            });
           } catch {
             return await rawPosts(filter, page, ctx);
           }
@@ -251,7 +253,13 @@ export class ProviderEngine {
       if (typeof rawSearch === 'function') {
         searchPostsFn = async (query: string, page: number, ctx: ProviderContext) => {
           try {
-            return await rawSearch({ searchQuery: query, page, providerContext: ctx });
+            return await rawSearch({
+              searchQuery: query,
+              page,
+              providerValue,
+              signal: new AbortController().signal,
+              providerContext: ctx,
+            });
           } catch {
             return await rawSearch(query, page, ctx);
           }
@@ -267,7 +275,13 @@ export class ProviderEngine {
       if (typeof rawMeta === 'function') {
         metaFn = async (link: string, ctx: ProviderContext) => {
           try {
-            return await rawMeta({ link, providerContext: ctx });
+            return await rawMeta({
+              link,
+              provider: providerValue,
+              providerValue,
+              signal: new AbortController().signal,
+              providerContext: ctx,
+            });
           } catch {
             return await rawMeta(link, ctx);
           }
@@ -283,7 +297,14 @@ export class ProviderEngine {
       if (typeof rawStream === 'function') {
         streamFn = async (link: string, type: string, ctx: ProviderContext) => {
           try {
-            return await rawStream({ link, type, providerContext: ctx, isDownload: false });
+            return await rawStream({
+              link,
+              type,
+              providerValue,
+              signal: new AbortController().signal,
+              providerContext: ctx,
+              isDownload: false,
+            });
           } catch {
             return await rawStream(link, type, ctx);
           }
@@ -306,31 +327,20 @@ export class ProviderEngine {
   }
 
   /**
-   * Get catalog categories for a provider with preloaded fallback
+   * Get catalog categories for a provider
    */
   public async getCatalog(providerValue: string, sourceUrl?: string): Promise<Catalog[]> {
-    try {
-      const loaded = await this.loadProvider(providerValue, sourceUrl);
-      if (loaded.catalogFn) {
-        const ctx = this.createContext(providerValue);
-        const catalog = await loaded.catalogFn(ctx);
-        if (Array.isArray(catalog) && catalog.length > 0) return catalog;
-      }
-    } catch (e) {
-      console.warn(`Catalog load error for ${providerValue}, using preloaded:`, e);
+    const loaded = await this.loadProvider(providerValue, sourceUrl);
+    if (loaded.catalogFn) {
+      const ctx = this.createContext(providerValue);
+      const catalog = await loaded.catalogFn(ctx);
+      if (Array.isArray(catalog) && catalog.length > 0) return catalog;
     }
-
-    // Preloaded fallback
-    const pre = PRELOADED_DATA[providerValue];
-    if (pre && pre.catalogs.length > 0) {
-      return pre.catalogs;
-    }
-
-    return [{ title: 'Featured Content', filter: '' }];
+    return [{ title: 'Featured', filter: '' }];
   }
 
   /**
-   * Get posts for a catalog filter with preloaded fallback
+   * Get posts for a catalog filter
    */
   public async getPosts(
     providerValue: string,
@@ -338,40 +348,19 @@ export class ProviderEngine {
     page: number = 1,
     sourceUrl?: string
   ): Promise<Post[]> {
-    try {
-      const loaded = await this.loadProvider(providerValue, sourceUrl);
-      if (loaded.postsFn) {
-        const ctx = this.createContext(providerValue);
-        const posts = await loaded.postsFn(filter, page, ctx);
-        if (Array.isArray(posts) && posts.length > 0) return posts;
-      }
-    } catch (e) {
-      console.warn(`Posts load error for ${providerValue} (${filter}), using preloaded:`, e);
+    const loaded = await this.loadProvider(providerValue, sourceUrl);
+    if (!loaded.postsFn) {
+      throw new Error(`Provider "${providerValue}" does not export getPosts`);
     }
 
-    // Preloaded fallback
-    const pre = PRELOADED_DATA[providerValue];
-    if (pre) {
-      if (pre.categoryPosts[filter] && pre.categoryPosts[filter].length > 0) {
-        return pre.categoryPosts[filter];
-      }
-      // Return first available preloaded category
-      const keys = Object.keys(pre.categoryPosts);
-      if (keys.length > 0 && pre.categoryPosts[keys[0]]) {
-        return pre.categoryPosts[keys[0]];
-      }
-    }
-
-    // Fallback to VMovies preloaded if current provider has no data
-    if (PRELOADED_DATA.vega?.categoryPosts['']) {
-      return PRELOADED_DATA.vega.categoryPosts[''];
-    }
-
+    const ctx = this.createContext(providerValue);
+    const posts = await loaded.postsFn(filter, page, ctx);
+    if (Array.isArray(posts)) return posts;
     return [];
   }
 
   /**
-   * Search posts by query with preloaded fallback
+   * Search posts by query
    */
   public async getSearchPosts(
     providerValue: string,
@@ -379,82 +368,51 @@ export class ProviderEngine {
     page: number = 1,
     sourceUrl?: string
   ): Promise<Post[]> {
-    try {
-      const loaded = await this.loadProvider(providerValue, sourceUrl);
-      const ctx = this.createContext(providerValue);
+    const loaded = await this.loadProvider(providerValue, sourceUrl);
+    const ctx = this.createContext(providerValue);
 
-      if (loaded.searchPostsFn) {
-        const posts = await loaded.searchPostsFn(query, page, ctx);
-        if (Array.isArray(posts) && posts.length > 0) return posts;
-      }
-
-      if (loaded.postsFn) {
-        const posts = await loaded.postsFn(query, page, ctx);
-        if (Array.isArray(posts) && posts.length > 0) return posts;
-      }
-    } catch (e) {
-      console.warn(`Search error for ${providerValue}:`, e);
+    if (loaded.searchPostsFn) {
+      const posts = await loaded.searchPostsFn(query, page, ctx);
+      if (Array.isArray(posts) && posts.length > 0) return posts;
     }
 
-    // Search through all preloaded posts across all categories
-    const results: Post[] = [];
-    const qLower = query.toLowerCase();
+    if (loaded.postsFn) {
+      const posts = await loaded.postsFn(query, page, ctx);
+      if (Array.isArray(posts)) return posts;
+    }
 
-    Object.values(PRELOADED_DATA).forEach((pData) => {
-      Object.values(pData.categoryPosts).forEach((postList) => {
-        postList.forEach((post) => {
-          if (post.title.toLowerCase().includes(qLower)) {
-            if (!results.some((r) => r.link === post.link)) {
-              results.push(post);
-            }
-          }
-        });
-      });
-    });
-
-    return results;
+    return [];
   }
 
   /**
-   * Get item metadata with preloaded fallback
+   * Get item metadata
    */
   public async getMeta(
     providerValue: string,
     link: string,
     sourceUrl?: string
   ): Promise<Info> {
-    try {
-      const loaded = await this.loadProvider(providerValue, sourceUrl);
-      if (loaded.metaFn) {
-        const ctx = this.createContext(providerValue);
-        const meta = await loaded.metaFn(link, ctx);
-        if (meta && meta.title) return meta;
-      }
-    } catch (e) {
-      console.warn(`Meta load error for ${link}:`, e);
+    const loaded = await this.loadProvider(providerValue, sourceUrl);
+    if (loaded.metaFn) {
+      const ctx = this.createContext(providerValue);
+      const meta = await loaded.metaFn(link, ctx);
+      if (meta && meta.title) return meta;
     }
 
-    // Preloaded fallback
-    const pre = PRELOADED_DATA[providerValue];
-    if (pre?.sampleDetails[link]) {
-      return pre.sampleDetails[link];
-    }
-
-    // Default dynamic meta object
+    // Direct fallback meta
     return {
       title: link.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-      synopsis: 'High-speed media stream ready for playback on Smart TV and mobile devices.',
-      image: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&auto=format&fit=crop&q=80',
-      poster: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1200&auto=format&fit=crop&q=80',
+      synopsis: 'Video stream ready for high-speed playback.',
+      image: '',
+      poster: '',
       type: 'movie',
-      rating: '8.5 ★',
       linkList: [
         {
           title: 'Direct Video Streams',
           directLinks: [
             {
-              title: 'Master Adaptive Stream (Auto HLS)',
-              link: link.startsWith('http') ? link : 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+              title: 'Play Stream',
+              link,
               type: 'movie',
             },
           ],
@@ -464,7 +422,7 @@ export class ProviderEngine {
   }
 
   /**
-   * Get playable stream URLs with preloaded fallback
+   * Get playable stream URLs
    */
   public async getStream(
     providerValue: string,
@@ -472,25 +430,15 @@ export class ProviderEngine {
     type: string = 'movie',
     sourceUrl?: string
   ): Promise<Stream[]> {
-    try {
-      const loaded = await this.loadProvider(providerValue, sourceUrl);
-      if (loaded.streamFn) {
-        const ctx = this.createContext(providerValue);
-        const streams = await loaded.streamFn(link, type, ctx);
-        if (Array.isArray(streams) && streams.length > 0) return streams;
-      }
-    } catch (e) {
-      console.warn(`Stream load error for ${link}:`, e);
+    const loaded = await this.loadProvider(providerValue, sourceUrl);
+    if (loaded.streamFn) {
+      const ctx = this.createContext(providerValue);
+      const streams = await loaded.streamFn(link, type, ctx);
+      if (Array.isArray(streams) && streams.length > 0) return streams;
     }
 
-    // Preloaded fallback
-    const pre = PRELOADED_DATA[providerValue];
-    if (pre?.sampleStreams[link]) {
-      return pre.sampleStreams[link];
-    }
-
-    // If link is already a direct playable stream url
-    if (link.startsWith('http') && (link.includes('.m3u8') || link.includes('.mp4'))) {
+    // If link is already a direct playable video URL
+    if (link.startsWith('http')) {
       return [
         {
           server: 'Direct CDN Stream',
@@ -501,21 +449,7 @@ export class ProviderEngine {
       ];
     }
 
-    // Universal working demo stream
-    return [
-      {
-        server: 'Auto Adaptive (Master HLS - Ultra Fast)',
-        link: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-        type: 'm3u8',
-        quality: 'auto',
-      },
-      {
-        server: 'Direct CDN (Full HD 1080p)',
-        link: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-        type: 'mp4',
-        quality: '1080',
-      },
-    ];
+    throw new Error('No playable stream found for this item');
   }
 
   /**

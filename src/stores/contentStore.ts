@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { Catalog, Post, Info } from '../lib/providers/types';
 import { ProviderEngine } from '../lib/providers/providerEngine';
 import { useProviderStore } from './providerStore';
-import { PRELOADED_DATA } from '../lib/providers/preloadedData';
 
 export interface ContentStoreState {
   catalogs: Catalog[];
@@ -37,9 +36,9 @@ const SEARCH_HISTORY_KEY = 'vega_search_history_v2';
 const loadSearchHistory = (): string[] => {
   try {
     const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
-    return raw ? JSON.parse(raw) : ['Dune', 'Stranger Things', 'Arcane', 'Deadpool', '4K'];
+    return raw ? JSON.parse(raw) : ['Trending', 'Action', 'HD', '4K'];
   } catch {
-    return ['Dune', 'Stranger Things', 'Arcane', 'Deadpool'];
+    return ['Trending', 'Action'];
   }
 };
 
@@ -51,15 +50,12 @@ const saveSearchHistory = (history: string[]) => {
   }
 };
 
-// Initial state seeded with Zenda's VMovies data for instant first-render
-const initialVega = PRELOADED_DATA.vega;
-
 export const useContentStore = create<ContentStoreState>((set, get) => ({
-  catalogs: initialVega.catalogs,
-  categoryPosts: initialVega.categoryPosts,
-  categoryPages: { '': 1 },
-  categoryHasMore: { '': true },
-  heroPosts: initialVega.heroPosts,
+  catalogs: [],
+  categoryPosts: {},
+  categoryPages: {},
+  categoryHasMore: {},
+  heroPosts: [],
   currentDetail: null,
   searchResults: [],
   searchHistory: loadSearchHistory(),
@@ -85,8 +81,8 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
       const catalogs = await engine.getCatalog(activeProvider.value);
       set({ catalogs });
 
-      // Fetch top categories (up to 5 rows for home screen)
-      const topCatalogs = catalogs.slice(0, 5);
+      // Fetch top categories (up to 6 rows for home screen)
+      const topCatalogs = catalogs.slice(0, 6);
       const postsMap: Record<string, Post[]> = {};
       const pagesMap: Record<string, number> = {};
       const hasMoreMap: Record<string, boolean> = {};
@@ -97,37 +93,44 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
           postsMap[cat.filter] = posts;
           pagesMap[cat.filter] = 1;
           hasMoreMap[cat.filter] = posts.length >= 8;
-        } catch (e) {
+        } catch (e: any) {
           console.warn(`Failed to fetch category ${cat.title}:`, e);
-          // Preloaded fallback
-          const pre = PRELOADED_DATA[activeProvider.value];
-          postsMap[cat.filter] = pre?.categoryPosts[cat.filter] || [];
+          postsMap[cat.filter] = [];
         }
       });
 
       await Promise.all(fetchPromises);
 
-      // Hero posts taken from first category or preloaded
-      const firstCatPosts = postsMap[topCatalogs[0]?.filter] || [];
-      const preHero = PRELOADED_DATA[activeProvider.value]?.heroPosts || [];
-      const heroes = firstCatPosts.length >= 3 ? firstCatPosts.slice(0, 5) : preHero;
+      // Hero posts taken from first available non-empty category
+      let heroes: Post[] = [];
+      for (const cat of topCatalogs) {
+        if (postsMap[cat.filter] && postsMap[cat.filter].length > 0) {
+          heroes = postsMap[cat.filter].slice(0, 5);
+          break;
+        }
+      }
+
+      const totalItems = Object.values(postsMap).reduce((sum, p) => sum + p.length, 0);
 
       set({
         categoryPosts: postsMap,
         categoryPages: pagesMap,
         categoryHasMore: hasMoreMap,
-        heroPosts: heroes.length > 0 ? heroes : preHero,
+        heroPosts: heroes,
         isLoadingHome: false,
+        error:
+          totalItems === 0
+            ? 'No content could be loaded from this provider. Please check your proxy connection or try switching to another provider.'
+            : null,
       });
     } catch (err: any) {
-      console.warn('Failed to load home content from live provider, using preloaded:', err);
-      const pre = PRELOADED_DATA[activeProvider.value] || PRELOADED_DATA.vega;
+      console.warn('Failed to load home content:', err);
       set({
-        catalogs: pre.catalogs,
-        categoryPosts: pre.categoryPosts,
-        heroPosts: pre.heroPosts,
+        catalogs: [],
+        categoryPosts: {},
+        heroPosts: [],
         isLoadingHome: false,
-        error: null, // Don't block UI with error screen when preloaded data exists
+        error: err.message || 'Failed to load content from provider. Please check proxy settings.',
       });
     }
   },
@@ -190,6 +193,7 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
       set({
         isSearching: false,
         searchResults: [],
+        error: err.message || 'Search failed',
       });
     }
   },
@@ -214,6 +218,7 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
       console.warn('Failed to load detail:', err);
       set({
         isLoadingDetail: false,
+        error: err.message || 'Failed to load details',
       });
       return null;
     }
