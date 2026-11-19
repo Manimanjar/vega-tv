@@ -10,6 +10,7 @@ import { HeroSkeleton } from '../components/skeletons/HeroSkeleton';
 import { PosterSkeleton } from '../components/skeletons/PosterSkeleton';
 import { Button } from '../components/ui/Button';
 import { ProxySettingsModal } from '../components/modals/ProxySettingsModal';
+import { smartProxy } from '../lib/providers/smartProxy';
 import { Play, Sparkles, RefreshCw, Radio, Layers } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
@@ -28,6 +29,16 @@ export const HomePage: React.FC = () => {
   } = useContentStore();
 
   const continueWatching = useWatchHistoryStore((state) => state.getContinueWatchingList());
+
+  const [proxyOnline, setProxyOnline] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState('');
+
+  useEffect(() => {
+    return smartProxy.subscribe((url: string, isConn: boolean) => {
+      setProxyUrl(url);
+      setProxyOnline(isConn);
+    });
+  }, []);
 
   useEffect(() => {
     if (activeProvider?.value) {
@@ -69,6 +80,39 @@ export const HomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-24">
+      {/* Proxy Quick Status Bar for TV & Mobile */}
+      <div className="px-4 sm:px-8 pt-3 pb-2 flex items-center justify-between gap-4">
+        <button
+          type="button"
+          onClick={() => setProxyModalOpen(true)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+            proxyOnline
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20 shadow-lg'
+          }`}
+          data-focusable="true"
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              proxyOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+            }`}
+          />
+          <span>
+            {proxyOnline
+              ? 'Streaming Proxy: Online'
+              : 'Streaming Proxy: Tap to Connect (Smart TV / Mobile)'}
+          </span>
+          <Radio className="w-3.5 h-3.5 ml-0.5 opacity-70" />
+        </button>
+
+        <div className="text-xs text-white/50 flex items-center gap-2">
+          <span className="hidden sm:inline">Active Provider:</span>
+          <span className="font-semibold text-white px-2 py-0.5 rounded bg-white/5 border border-white/10">
+            {activeProvider?.display_name || 'VMovies'}
+          </span>
+        </div>
+      </div>
+
       {/* Featured Hero Carousel */}
       {heroPosts.length > 0 && <HeroCard posts={heroPosts} />}
 

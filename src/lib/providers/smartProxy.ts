@@ -36,12 +36,15 @@ export class SmartProxyManager {
         this.customProxyUrl = stored.trim();
         return;
       }
-      // Check vega_settings_v1
-      const settingsRaw = localStorage.getItem('vega_settings_v1');
-      if (settingsRaw) {
-        const parsed = JSON.parse(settingsRaw);
-        if (parsed.corsProxyUrl && typeof parsed.corsProxyUrl === 'string') {
-          this.customProxyUrl = parsed.corsProxyUrl.trim();
+      // Check vega_settings_v5, then legacy keys
+      for (const key of ['vega_settings_v5', 'vega_settings_v1']) {
+        const settingsRaw = localStorage.getItem(key);
+        if (settingsRaw) {
+          const parsed = JSON.parse(settingsRaw);
+          if (parsed.corsProxyUrl && typeof parsed.corsProxyUrl === 'string' && parsed.corsProxyUrl.trim()) {
+            this.customProxyUrl = parsed.corsProxyUrl.trim();
+            return;
+          }
         }
       }
     } catch (e) {
@@ -134,9 +137,10 @@ export class SmartProxyManager {
     if (url.includes('raw.githubusercontent.com')) return true;
     if (url.includes('cdn.jsdelivr.net')) return true;
     if (url.includes('image.tmdb.org')) return true;
+    if (url.includes('images.metahub.space')) return true;
+    if (url.includes('imgbb.fit')) return true;
     if (url.includes('images.unsplash.com')) return true;
     if (url.includes('test-streams.mux.dev')) return true;
-    if (url.includes('commondatastorage.googleapis.com')) return true;
     return false;
   }
 
@@ -241,7 +245,7 @@ export class SmartProxyManager {
   }
 
   /**
-   * Creates an Axios instance that routes through the proxy
+   * Creates an Axios instance that routes through the proxy and sanitizes browser headers
    */
   public createAxiosInstance(): AxiosInstance {
     const inst = axios.create({
@@ -256,6 +260,17 @@ export class SmartProxyManager {
     inst.interceptors.request.use((config) => {
       if (config.url) {
         config.url = this.formatUrl(config.url);
+      }
+      // In browsers, strip forbidden request headers that trigger XHR errors
+      if (typeof window !== 'undefined' && config.headers) {
+        delete (config.headers as any)['User-Agent'];
+        delete (config.headers as any)['user-agent'];
+        delete (config.headers as any)['Referer'];
+        delete (config.headers as any)['referer'];
+        delete (config.headers as any)['Origin'];
+        delete (config.headers as any)['origin'];
+        delete (config.headers as any)['Host'];
+        delete (config.headers as any)['host'];
       }
       return config;
     });

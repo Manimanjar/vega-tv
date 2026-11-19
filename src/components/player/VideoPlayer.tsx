@@ -213,9 +213,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.play().catch(() => setIsPlaying(false));
       };
 
-      const onError = () => {
-        setIsBuffering(false);
-        setErrorMessage('Failed to load video stream. Tap below to switch server.');
+      const onError = (e: any) => {
+        console.warn('Direct stream playback error on server:', activeStream?.server, e);
+        if (currentStreamIndex < streams.length - 1) {
+          console.log(
+            `Failing over from ${activeStream?.server} to next stream:`,
+            streams[currentStreamIndex + 1]?.server
+          );
+          setCurrentStreamIndex((prev) => prev + 1);
+        } else {
+          setIsBuffering(false);
+          setErrorMessage(
+            'Failed to load video stream. Please check your proxy settings or try another quality.'
+          );
+        }
       };
 
       video.addEventListener('loadedmetadata', onLoaded, { once: true });

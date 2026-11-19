@@ -20,25 +20,79 @@ export interface ProviderStoreState {
   setActiveSource: (id: string) => Promise<void>;
 }
 
-const SOURCES_STORAGE_KEY = 'vega_provider_sources_v3';
+const SOURCES_STORAGE_KEY = 'vega_provider_sources_v5';
 
 export const DEFAULT_SOURCES: ProviderSource[] = [
+  {
+    id: 'zenda-official',
+    name: 'Vega Movies & Series (Official)',
+    url: ZENDA_SOURCE_URL,
+    enabled: true,
+  },
   {
     id: 'custom-vega',
     name: 'Vega Providers (Manimanjar)',
     url: MANIMANJAR_SOURCE_URL,
     enabled: true,
   },
-  {
-    id: 'zenda-official',
-    name: 'Movies & Series (Zenda Official)',
-    url: ZENDA_SOURCE_URL,
-    enabled: true,
-  },
 ];
 
 // Fallback manifests available instantly offline
 const FALLBACK_MANIFESTS: ProviderManifest[] = [
+  {
+    display_name: 'VMovies',
+    value: 'vega',
+    version: '2.52',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/vega.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'MoviesDrive',
+    value: 'drive',
+    version: '2.30',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'MultiStream',
+    value: 'autoEmbed',
+    version: '3.7',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: '4K HD Hub',
+    value: '4khdhub',
+    version: '2.1',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/4khdhub.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'KatMovies',
+    value: 'katmovies',
+    version: '2.4',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/katmovies.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'World4uFree',
+    value: 'world4u',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/world4u.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
   {
     display_name: 'XVideos',
     value: 'xvideos',
@@ -62,33 +116,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     value: 'pornhub',
     version: '2.3.5',
     icon: 'https://www.pornhub.com/favicon.ico',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'VMovies',
-    value: 'vega',
-    version: '2.52',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/vega.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'MultiStream',
-    value: 'autoEmbed',
-    version: '3.7',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'MoviesDrive',
-    value: 'drive',
-    version: '2.30',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -118,9 +145,9 @@ const saveStoredSources = (sources: ProviderSource[]) => {
 
 export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   sources: loadStoredSources(),
-  activeSourceId: 'custom-vega',
-  manifests: FALLBACK_MANIFESTS.slice(0, 3),
-  activeProvider: FALLBACK_MANIFESTS[0], // default: XVideos / Rule34Video
+  activeSourceId: 'zenda-official',
+  manifests: FALLBACK_MANIFESTS,
+  activeProvider: FALLBACK_MANIFESTS[0], // default: VMovies (vega)
   isLoading: false,
   error: null,
 
@@ -132,22 +159,67 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
   loadProviders: async (customSourceUrl?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const { sources, activeSourceId } = get();
-      const currentSource = sources.find((s) => s.id === activeSourceId) || sources[0];
-      const sourceUrl = customSourceUrl || currentSource?.url || MANIMANJAR_SOURCE_URL;
-
+      const { sources } = get();
       const engine = ProviderEngine.getInstance();
-      const manifests = await engine.loadManifest(sourceUrl);
 
-      // Determine active provider
+      // If a specific custom source was requested, load it directly
+      if (customSourceUrl) {
+        const manifests = await engine.loadManifest(customSourceUrl);
+        const storedActive = useSettingsStore.getState().activeProviderValue;
+        let active = manifests.find((m) => m.value === storedActive && !m.disabled);
+        if (!active) {
+          active = manifests.find((m) => !m.disabled) || manifests[0] || FALLBACK_MANIFESTS[0];
+        }
+        set({
+          manifests: manifests.length > 0 ? manifests : FALLBACK_MANIFESTS,
+          activeProvider: active,
+          isLoading: false,
+        });
+        if (active) {
+          useSettingsStore.getState().setActiveProviderValue(active.value);
+        }
+        return;
+      }
+
+      // Simultaneously load all enabled sources and merge without duplicates
+      const manifestPromises = sources
+        .filter((s) => s.enabled)
+        .map(async (s) => {
+          try {
+            return await engine.loadManifest(s.url);
+          } catch {
+            return [];
+          }
+        });
+
+      const allResults = await Promise.all(manifestPromises);
+      const combined = allResults.flat();
+
+      // Deduplicate manifests by value
+      const seen = new Set<string>();
+      const mergedManifests: ProviderManifest[] = [];
+      for (const m of combined) {
+        if (!seen.has(m.value)) {
+          seen.add(m.value);
+          mergedManifests.push(m);
+        }
+      }
+
+      const finalManifests = mergedManifests.length > 0 ? mergedManifests : FALLBACK_MANIFESTS;
+
+      // Determine active provider: stored -> vega -> first non-disabled
       const storedActive = useSettingsStore.getState().activeProviderValue;
-      let active = manifests.find((m) => m.value === storedActive && !m.disabled);
+      let active = finalManifests.find((m) => m.value === storedActive && !m.disabled);
       if (!active) {
-        active = manifests.find((m) => !m.disabled) || manifests[0] || FALLBACK_MANIFESTS[0];
+        active =
+          finalManifests.find((m) => m.value === 'vega') ||
+          finalManifests.find((m) => !m.disabled) ||
+          finalManifests[0] ||
+          FALLBACK_MANIFESTS[0];
       }
 
       set({
-        manifests: manifests.length > 0 ? manifests : FALLBACK_MANIFESTS,
+        manifests: finalManifests,
         activeProvider: active,
         isLoading: false,
       });

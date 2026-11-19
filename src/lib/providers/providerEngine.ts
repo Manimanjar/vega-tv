@@ -20,14 +20,41 @@ export class ProviderEngine {
   private static instance: ProviderEngine;
   private loadedProviders: Map<string, LoadedProvider> = new Map();
   private manifests: Map<string, ProviderManifest[]> = new Map();
+  private dynamicUrls: Record<string, { name: string; url: string }> = {};
+  private urlsLoaded: boolean = false;
 
-  constructor() {}
+  constructor() {
+    this.loadDynamicUrls();
+  }
 
   public static getInstance(): ProviderEngine {
     if (!ProviderEngine.instance) {
       ProviderEngine.instance = new ProviderEngine();
     }
     return ProviderEngine.instance;
+  }
+
+  public async loadDynamicUrls(): Promise<Record<string, { name: string; url: string }>> {
+    if (this.urlsLoaded && Object.keys(this.dynamicUrls).length > 0) {
+      return this.dynamicUrls;
+    }
+    const endpoints = [
+      'https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main/urls.json',
+      'https://raw.githubusercontent.com/Manimanjar/vega-providers/main/urls.json',
+    ];
+    for (const ep of endpoints) {
+      try {
+        const resp = await fetch(ep);
+        if (resp.ok) {
+          const data = await resp.json();
+          this.dynamicUrls = { ...this.dynamicUrls, ...data };
+          this.urlsLoaded = true;
+        }
+      } catch {
+        // continue
+      }
+    }
+    return this.dynamicUrls;
   }
 
   public getCommonHeaders(): Record<string, string> {
@@ -64,7 +91,41 @@ export class ProviderEngine {
       kvStore,
       getBaseUrl: async () => {
         const stored = await kvStore.get<string>('baseUrl');
-        return stored || '';
+        if (stored) return stored;
+
+        if (!this.urlsLoaded) {
+          await this.loadDynamicUrls();
+        }
+
+        // Direct key lookup
+        if (this.dynamicUrls[providerValue]?.url) {
+          return this.dynamicUrls[providerValue].url;
+        }
+
+        // Case-insensitive lookup (e.g. Vega vs vega)
+        const found = Object.entries(this.dynamicUrls).find(
+          ([k]) => k.toLowerCase() === providerValue.toLowerCase()
+        );
+        if (found && found[1]?.url) {
+          return found[1].url;
+        }
+
+        // Static fallbacks for popular Vega providers
+        const staticBases: Record<string, string> = {
+          vega: 'https://vegamovies.lease',
+          drive: 'https://new3.moviesdrive.cyou/',
+          xvideos: 'https://www.xvideos.com',
+          rule34video: 'https://rule34video.com',
+          pornhub: 'https://www.pornhub.com',
+          kat: 'https://new.katmoviehd.top',
+          katmovies: 'https://new.katmoviehd.top',
+          multi: 'https://m1.multimovies.courses',
+          w4u: 'https://world4ufree.vu',
+          hdhub: 'https://new14.hdhub4u.cl',
+          '4khdhub': 'https://4khdhub.one',
+        };
+
+        return staticBases[providerValue.toLowerCase()] || '';
       },
     };
   }
@@ -157,13 +218,14 @@ export class ProviderEngine {
     let manifestList = await this.loadManifest(cleanSource);
     let manifest = manifestList.find((m) => m.value === providerValue);
 
-    // If not found in primary source, check Manimanjar repo
-    if (!manifest && cleanSource !== MANIMANJAR_SOURCE_URL) {
-      const altList = await this.loadManifest(MANIMANJAR_SOURCE_URL);
+    // If not found in primary source, check alternate repo (Zenda or Manimanjar)
+    const altSource = cleanSource === MANIMANJAR_SOURCE_URL ? ZENDA_SOURCE_URL : MANIMANJAR_SOURCE_URL;
+    if (!manifest) {
+      const altList = await this.loadManifest(altSource);
       const altManifest = altList.find((m) => m.value === providerValue);
       if (altManifest) {
         manifest = altManifest;
-        return this.loadProvider(providerValue, MANIMANJAR_SOURCE_URL);
+        return this.loadProvider(providerValue, altSource);
       }
     }
 
@@ -180,22 +242,38 @@ export class ProviderEngine {
     }
 
     const fetchDistFile = async (fileName: string): Promise<string> => {
+      // 1. Try primary source
       const fileUrl = `${cleanSource}/dist/${providerValue}/${fileName}`;
       try {
         const resp = await fetch(fileUrl);
         if (resp.ok) {
-          return await resp.text();
+          const txt = await resp.text();
+          if (txt && !txt.includes('404: Not Found')) return txt;
         }
       } catch (err) {
         try {
           const proxyResp = await smartProxy.fetchWithFailover(fileUrl);
           if (proxyResp.ok) {
-            return await proxyResp.text();
+            const txt = await proxyResp.text();
+            if (txt && !txt.includes('404: Not Found')) return txt;
           }
         } catch {
           // ignore
         }
       }
+
+      // 2. Try alternate source fallback
+      const altFileUrl = `${altSource}/dist/${providerValue}/${fileName}`;
+      try {
+        const altResp = await fetch(altFileUrl);
+        if (altResp.ok) {
+          const txt = await altResp.text();
+          if (txt && !txt.includes('404: Not Found')) return txt;
+        }
+      } catch {
+        // ignore
+      }
+
       return '';
     };
 
@@ -296,17 +374,24 @@ export class ProviderEngine {
       const rawStream = mod.getStream || mod.stream || mod.default;
       if (typeof rawStream === 'function') {
         streamFn = async (link: string, type: string, ctx: ProviderContext) => {
+          const params = {
+            link,
+            type,
+            providerValue,
+            signal: new AbortController().signal,
+            providerContext: ctx,
+            isDownload: false,
+          };
           try {
-            return await rawStream({
-              link,
-              type,
-              providerValue,
-              signal: new AbortController().signal,
-              providerContext: ctx,
-              isDownload: false,
-            });
-          } catch {
-            return await rawStream(link, type, ctx);
+            return await rawStream(params);
+          } catch (e1: any) {
+            // Some providers accept positional arguments (link, type, ctx)
+            try {
+              return await rawStream(link, type, ctx);
+            } catch (e2: any) {
+              console.warn(`[ProviderEngine] Stream extraction failed for ${providerValue}:`, e1 || e2);
+              throw e1 || e2;
+            }
           }
         };
       }

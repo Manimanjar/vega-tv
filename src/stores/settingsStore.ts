@@ -20,7 +20,7 @@ export interface SettingsState {
   resetSettings: () => void;
 }
 
-const STORAGE_KEY = 'vega_settings_v1';
+const STORAGE_KEY = 'vega_settings_v5';
 
 const defaultSettings = {
   corsProxyUrl: '',
@@ -29,7 +29,7 @@ const defaultSettings = {
   autoPlayNext: true,
   playbackSpeed: 1.0,
   skipDuration: 10,
-  activeProviderValue: 'rule34video',
+  activeProviderValue: 'vega',
 };
 
 const loadInitialSettings = () => {
