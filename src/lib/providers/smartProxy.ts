@@ -34,18 +34,27 @@ export class SmartProxyManager {
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (stored && stored.trim()) {
         this.customProxyUrl = stored.trim();
-        return;
-      }
-      // Check vega_settings_v5, then legacy keys
-      for (const key of ['vega_settings_v5', 'vega_settings_v1']) {
-        const settingsRaw = localStorage.getItem(key);
-        if (settingsRaw) {
-          const parsed = JSON.parse(settingsRaw);
-          if (parsed.corsProxyUrl && typeof parsed.corsProxyUrl === 'string' && parsed.corsProxyUrl.trim()) {
-            this.customProxyUrl = parsed.corsProxyUrl.trim();
-            return;
+      } else {
+        // Check vega_settings_v5, then legacy keys
+        for (const key of ['vega_settings_v5', 'vega_settings_v1']) {
+          const settingsRaw = localStorage.getItem(key);
+          if (settingsRaw) {
+            const parsed = JSON.parse(settingsRaw);
+            if (parsed.corsProxyUrl && typeof parsed.corsProxyUrl === 'string' && parsed.corsProxyUrl.trim()) {
+              this.customProxyUrl = parsed.corsProxyUrl.trim();
+              break;
+            }
           }
         }
+      }
+
+      // Purge dead placeholder proxies that fail with DNS errors
+      if (
+        this.customProxyUrl.includes('cors-proxy.workers.dev') ||
+        this.customProxyUrl.includes('example.com')
+      ) {
+        this.customProxyUrl = '';
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
       }
     } catch (e) {
       console.warn('[SmartProxy] Failed to load proxy from storage:', e);
@@ -158,7 +167,7 @@ export class SmartProxyManager {
     }
 
     // 1. User configured proxy or detected local proxy
-    if (this.customProxyUrl) {
+    if (this.customProxyUrl && !this.customProxyUrl.includes('cors-proxy.workers.dev')) {
       const clean = this.customProxyUrl.replace(/\/+$/, '');
       if (clean.includes('?url=') || clean.endsWith('=')) {
         return `${clean}${encodeURIComponent(targetUrl)}`;
@@ -175,8 +184,15 @@ export class SmartProxyManager {
       return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
     }
 
-    // 3. Default fallback to local port 8080
-    return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}`;
+    // 3. If running over HTTP or local proxy detected
+    if (
+      typeof window !== 'undefined' &&
+      (window.location.protocol === 'http:' || this.isLocalProxyAvailable)
+    ) {
+      return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}`;
+    }
+
+    return targetUrl;
   }
 
   /**
@@ -184,6 +200,30 @@ export class SmartProxyManager {
    */
   public async testProxy(proxyUrlToTest: string): Promise<ProxyPingResult> {
     const clean = proxyUrlToTest.trim().replace(/\/+$/, '');
+    if (!clean) {
+      return {
+        ok: false,
+        latencyMs: 0,
+        url: '',
+        message: 'Please enter a proxy URL to test',
+      };
+    }
+
+    // Warn about Mixed Content: HTTPS page attempting to fetch HTTP endpoint
+    if (
+      typeof window !== 'undefined' &&
+      window.location.protocol === 'https:' &&
+      clean.startsWith('http://')
+    ) {
+      return {
+        ok: false,
+        latencyMs: 0,
+        url: clean,
+        message:
+          'Mixed Content: Browsers block plain http:// connections from https:// pages. Use an HTTPS proxy (Vercel or Cloudflare Worker) or open the web app over http:// locally.',
+      };
+    }
+
     const testTarget = 'https://raw.githubusercontent.com/Manimanjar/vega-providers/main/manifest.json';
     const finalUrl = clean.includes('?url=') || clean.endsWith('=')
       ? `${clean}${encodeURIComponent(testTarget)}`

@@ -144,11 +144,38 @@ npm run preview
 
 ---
 
-## 🌐 GitHub Pages Deployment
+## ⚡ Deployment & Streaming Proxy (Smart TV & Mobile)
 
-The project is pre-configured for GitHub Pages using `HashRouter` and `base: '/vega-web/'`.
+Because web browsers enforce Cross-Origin Resource Sharing (CORS), client-side scrapers require an HTTPS proxy to fetch provider endpoints and video streams.
 
-To deploy:
-1. Push the repository to GitHub.
-2. In GitHub repository settings, go to **Settings > Pages**.
-3. Under **Build and deployment**, select **GitHub Actions** and use the static Vite deployment workflow or deploy the `dist/` branch.
+### Option 1: 1-Click Free Vercel Deploy (Zero Setup - Recommended for TV & Mobile)
+
+Deploying to Vercel provides both the web application and its built-in Serverless Edge Proxy (`/api/proxy`) on the exact same HTTPS origin. **No local terminal, no daemon, and zero manual proxy configuration needed on your Smart TV!**
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Manimanjar/vega-web)
+
+1. Click the **Deploy with Vercel** button above.
+2. Sign in with GitHub and click **Create**.
+3. Vercel automatically deploys your streaming app with the `/api/proxy` edge function in ~30 seconds.
+4. Open the assigned `.vercel.app` URL on your Smart TV browser or mobile phone—everything works out of the box!
+
+---
+
+### Option 2: Free Cloudflare Worker (For GitHub Pages Users)
+
+If you prefer hosting on GitHub Pages (`https://manimanjar.github.io/vega-web/`):
+1. Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/) and go to **Workers & Pages** $\to$ **Create Worker**.
+2. Click **Deploy** $\to$ **Edit code**.
+3. Copy and paste the contents of [`cors-worker/worker.js`](./cors-worker/worker.js), then click **Save and deploy**.
+4. Copy your assigned URL (e.g. `https://my-proxy.<subdomain>.workers.dev/?url=`).
+5. Open `https://manimanjar.github.io/vega-web/`, click the top **Streaming Proxy** button, paste your worker URL, and click **Save & Connect**.
+
+---
+
+### Option 3: Local Network Proxy (For Local Testing)
+
+Run the included high-speed streaming proxy locally:
+```bash
+node scripts/local-proxy.js
+```
+*Note: Due to browser Mixed Content security rules, plain `http://` proxies are blocked when viewing `https://` GitHub Pages. For local testing, run the web app over HTTP via `npm run preview` on `http://localhost:5173`.*
