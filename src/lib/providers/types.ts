@@ -23,6 +23,7 @@ export interface Link {
   title: string;
   quality?: string;
   directLinks?: DirectLink[];
+  episodesLink?: string;
 }
 
 export interface DirectLink {
@@ -90,6 +91,7 @@ export interface LoadedProvider {
   postsFn?: (filter: string, page: number, providerContext: ProviderContext) => Promise<Post[]>;
   searchPostsFn?: (query: string, page: number, providerContext: ProviderContext) => Promise<Post[]>;
   metaFn?: (link: string, providerContext: ProviderContext) => Promise<Info>;
+  episodesFn?: (url: string, providerContext: ProviderContext) => Promise<DirectLink[]>;
   streamFn?: (link: string, type: string, providerContext: ProviderContext) => Promise<Stream[]>;
 }
 

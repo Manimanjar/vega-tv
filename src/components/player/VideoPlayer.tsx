@@ -67,6 +67,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [seekRipple, setSeekRipple] = useState<{ side: 'left' | 'right'; text: string } | null>(null);
   const [autoNextDismissed, setAutoNextDismissed] = useState(false);
   const [streamRoutingMode, setStreamRoutingMode] = useState<'direct' | 'proxy'>('direct');
+  const [isMkvGuidanceDismissed, setIsMkvGuidanceDismissed] = useState(false);
 
   const handleToggleRoutingMode = () => {
     setStreamRoutingMode((prev) => (prev === 'direct' ? 'proxy' : 'direct'));
@@ -79,6 +80,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const { updateProgress, getProgress } = useWatchHistoryStore();
 
   const activeStream = streams[currentStreamIndex] || streams[0];
+
+  // Auto-select first non-MKV/HLS stream if available
+  useEffect(() => {
+    setIsMkvGuidanceDismissed(false);
+    if (streams && streams.length > 1) {
+      const isCurMkv =
+        activeStream?.type === 'mkv' ||
+        activeStream?.link?.endsWith('.mkv') ||
+        activeStream?.link?.includes('.mkv?');
+      if (isCurMkv) {
+        const firstPlayableIdx = streams.findIndex(
+          (s) => s && s.type !== 'mkv' && !s.link?.endsWith('.mkv') && !s.link?.includes('.mkv?')
+        );
+        if (firstPlayableIdx >= 0 && firstPlayableIdx !== currentStreamIndex) {
+          setCurrentStreamIndex(firstPlayableIdx);
+        }
+      }
+    }
+  }, [streams, activeStream, currentStreamIndex]);
 
   // Show controls and reset hide timer
   const showControls = useCallback(() => {
@@ -650,7 +670,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* MKV Container Guidance */}
-      {isCurrentStreamMkv && (
+      {isCurrentStreamMkv && errorMessage && !isMkvGuidanceDismissed && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 p-6 z-40 text-center max-w-lg mx-auto"
@@ -663,30 +683,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             Standard web browsers cannot decode MKV video containers directly. For instant browser streaming, switch to MultiStream (4K/1080p HLS) or open in an external video player (VLC / MX Player).
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 w-full">
-            <a
-              href={`vlc://${activeStream.link}`}
-              className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white flex items-center justify-center gap-2"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Open in VLC</span>
-            </a>
-            <a
-              href={activeStream.link}
-              target="_blank"
-              rel="noreferrer"
-              download
-              className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
-            >
-              Download MKV
-            </a>
+            {activeStream?.link &&
+              (activeStream.link.startsWith('http://') || activeStream.link.startsWith('https://')) && (
+                <>
+                  <a
+                    href={`vlc://${activeStream.link}`}
+                    className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Open in VLC</span>
+                  </a>
+                  <a
+                    href={activeStream.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
+                  >
+                    Download MKV
+                  </a>
+                </>
+              )}
             {streams.length > 1 && (
               <button
-                onClick={() => setCurrentStreamIndex((prev) => (prev + 1) % streams.length)}
+                onClick={() => {
+                  setIsMkvGuidanceDismissed(false);
+                  setCurrentStreamIndex((prev) => (prev + 1) % streams.length);
+                }}
                 className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
               >
                 Try Next Server
               </button>
             )}
+            <button
+              onClick={() => setIsMkvGuidanceDismissed(true)}
+              className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold hover:bg-white/20 border border-white/10"
+            >
+              Dismiss
+            </button>
             <button
               onClick={onBack}
               className="px-5 py-2.5 rounded-full bg-white/5 text-white/70 text-sm font-semibold hover:bg-white/10"

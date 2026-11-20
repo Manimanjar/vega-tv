@@ -182,11 +182,14 @@ export const DetailPage: React.FC = () => {
               data-focusable="true"
               navSection="detail-actions"
               onClick={() => {
-                if (
-                  currentDetail.linkList?.[0]?.directLinks?.[0]
-                ) {
-                  const firstLink = currentDetail.linkList[0].directLinks[0];
-                  handlePlay(currentDetail, firstLink.link, firstLink.title);
+                const firstDirect = currentDetail.linkList?.[0]?.directLinks?.[0];
+                if (firstDirect) {
+                  handlePlay(currentDetail, firstDirect.link, firstDirect.title);
+                } else if (isSeries) {
+                  const el = document.querySelector('[data-nav-section="detail-episodes"]');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
                 } else {
                   handlePlay(currentDetail);
                 }
@@ -284,6 +287,31 @@ export const DetailPage: React.FC = () => {
 
           {/* Episode rows for selected group */}
           <div className="space-y-2.5">
+            {(!currentDetail.linkList[selectedSeasonIdx]?.directLinks || currentDetail.linkList[selectedSeasonIdx]?.directLinks?.length === 0) && (
+              <div className="p-8 rounded-2xl bg-vega-surface1 text-center border border-white/5 flex flex-col items-center gap-3">
+                <p className="text-sm font-semibold text-white">
+                  No direct episode streams extracted for {currentDetail.linkList[selectedSeasonIdx]?.title || 'this season'}.
+                </p>
+                <p className="text-xs text-vega-textSecondary max-w-md">
+                  This provider requires web browser interaction for episode listings. Switch to MultiStream in the top bar for instant 1080p series streaming.
+                </p>
+                <div className="flex items-center gap-3 mt-1">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    data-focusable="true"
+                    navSection="detail-episodes"
+                    onClick={() => {
+                      useProviderStore.getState().setActiveProvider('autoEmbed');
+                      loadDetail(link);
+                    }}
+                  >
+                    Switch to MultiStream
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {currentDetail.linkList[selectedSeasonIdx]?.directLinks?.map((ep, epIdx) => {
               const epProgress = getProgress(ep.link);
               const watchedPct =

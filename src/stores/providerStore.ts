@@ -259,9 +259,9 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
 
       const finalManifests = mergedManifests.length > 0 ? mergedManifests : FALLBACK_MANIFESTS;
 
-      // Determine active provider: stored -> autoEmbed -> vega -> first non-disabled
+      // Determine active provider: stored -> autoEmbed -> first non-disabled
       let storedActive = useSettingsStore.getState().activeProviderValue;
-      if (storedActive && DISALLOWED_PROVIDERS.has(storedActive.toLowerCase())) {
+      if (!storedActive || DISALLOWED_PROVIDERS.has(storedActive.toLowerCase())) {
         storedActive = 'autoEmbed';
       }
 

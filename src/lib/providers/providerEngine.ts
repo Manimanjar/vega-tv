@@ -310,10 +310,11 @@ export class ProviderEngine {
     };
 
     // Fetch scripts in parallel
-    const [catalogCode, postsCode, metaCode, streamCode] = await Promise.all([
+    const [catalogCode, postsCode, metaCode, episodesCode, streamCode] = await Promise.all([
       fetchDistFile('catalog.js'),
       fetchDistFile('posts.js'),
       fetchDistFile('meta.js'),
+      fetchDistFile('episodes.js'),
       fetchDistFile('stream.js'),
     ]);
 
@@ -399,6 +400,27 @@ export class ProviderEngine {
       }
     }
 
+    // Parse episodes module
+    let episodesFn: LoadedProvider['episodesFn'];
+    if (episodesCode) {
+      const mod = this.evaluateCommonJs(episodesCode, `${providerValue}/episodes.js`);
+      const rawEpisodes = mod.getEpisodes || mod.episodes || mod.default;
+      if (typeof rawEpisodes === 'function') {
+        episodesFn = async (url: string, ctx: ProviderContext) => {
+          try {
+            return await rawEpisodes({
+              url,
+              providerValue,
+              signal: new AbortController().signal,
+              providerContext: ctx,
+            });
+          } catch {
+            return await rawEpisodes(url, ctx);
+          }
+        };
+      }
+    }
+
     // Parse stream module
     let streamFn: LoadedProvider['streamFn'];
     if (streamCode) {
@@ -436,6 +458,7 @@ export class ProviderEngine {
       postsFn,
       searchPostsFn,
       metaFn,
+      episodesFn,
       streamFn,
     };
 
@@ -557,10 +580,80 @@ export class ProviderEngine {
           poster = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${poster.replace(/^\/+/, '')}` : poster;
         }
 
+        let resolvedLinkList = meta.linkList || [];
+        if (Array.isArray(resolvedLinkList) && resolvedLinkList.length > 0) {
+          resolvedLinkList = await Promise.all(
+            resolvedLinkList.map(async (group: any) => {
+              if (group.episodesLink && (!group.directLinks || group.directLinks.length === 0)) {
+                try {
+                  const targetEpUrl = group.episodesLink.startsWith('http')
+                    ? group.episodesLink
+                    : baseUrl
+                    ? `${baseUrl.replace(/\/+$/, '')}/${group.episodesLink.replace(/^\/+/, '')}`
+                    : group.episodesLink;
+
+                  if (loaded.episodesFn) {
+                    const eps = await loaded.episodesFn(targetEpUrl, ctx);
+                    if (Array.isArray(eps) && eps.length > 0) {
+                      return {
+                        ...group,
+                        episodesLink: targetEpUrl,
+                        directLinks: eps.map((ep: any) => ({
+                          title: ep.title || 'Episode',
+                          link: ep.link || '',
+                          type: 'series' as const,
+                        })),
+                      };
+                    }
+                  } else {
+                    const epResp = await ctx.axios.get(targetEpUrl);
+                    if (epResp?.data) {
+                      const $ = cheerio.load(epResp.data);
+                      const container = $('.entry-content, .entry-inner, .post-content, .page-body');
+                      const episodes: any[] = [];
+                      container.find('h3, h4, h5, p').each((_, element) => {
+                        const el = $(element);
+                        const text = el.text().trim();
+                        if (/episodes?\s*[:\d\-]/i.test(text) || /e\d{1,3}\b/i.test(text) || /^episode\s*\d+/i.test(text)) {
+                          const title = text.replace(/\s+/g, ' ').trim().replace(/^[-:\s]+|[-:\s]+$/g, '').replace(/^episodes?\s*:\s*/i, 'Episode ');
+                          let nextP = el.next();
+                          for (; nextP.length && !nextP.is('p') && !nextP.find('a[href]').length;) {
+                            if (nextP.is('h1, h2, h3, h4, h5, h6')) break;
+                            nextP = nextP.next();
+                          }
+                          const vcloud = nextP.find("a[href*='vcloud'], a[href*='hubcloud']").attr('href');
+                          const vegadrive = nextP.find("a[href*='vegadrive']").attr('href');
+                          const epLink = vcloud && vegadrive
+                            ? JSON.stringify({ hubcloud: vcloud, vegadrive })
+                            : vcloud || vegadrive || nextP.find("a[href*='fastdl']").attr('href') || nextP.find('a[href]').first().attr('href') || '';
+                          if (title && epLink && !episodes.some((e) => e.title === title)) {
+                            episodes.push({ title, link: epLink, type: 'series' as const });
+                          }
+                        }
+                      });
+                      if (episodes.length > 0) {
+                        return {
+                          ...group,
+                          episodesLink: targetEpUrl,
+                          directLinks: episodes,
+                        };
+                      }
+                    }
+                  }
+                } catch (epErr) {
+                  console.warn('[ProviderEngine] Failed to resolve episodes for:', group.title, epErr);
+                }
+              }
+              return group;
+            })
+          );
+        }
+
         return {
           ...meta,
           image: image || poster,
           poster: poster || image,
+          linkList: resolvedLinkList,
         };
       }
     }
@@ -599,17 +692,19 @@ export class ProviderEngine {
     const loaded = await this.loadProvider(providerValue, sourceUrl);
     const ctx = this.createContext(providerValue);
     const baseUrl = await ctx.getBaseUrl();
-    const resolvedLink = link.startsWith('http')
+    const resolvedLink = (link.startsWith('http') || link.startsWith('{'))
       ? link
-      : `${baseUrl.replace(/\/+$/, '')}/${link.replace(/^\/+/, '')}`;
+      : baseUrl
+      ? `${baseUrl.replace(/\/+$/, '')}/${link.replace(/^\/+/, '')}`
+      : link;
 
     const normalizeStreams = (list: Stream[]): Stream[] => {
       return list
         .filter((s) => s && s.link)
         .map((s) => {
           let streamLink = s.link;
-          if (!streamLink.startsWith('http') && !streamLink.startsWith('blob:')) {
-            streamLink = `${baseUrl.replace(/\/+$/, '')}/${streamLink.replace(/^\/+/, '')}`;
+          if (!streamLink.startsWith('http') && !streamLink.startsWith('blob:') && !streamLink.startsWith('{')) {
+            streamLink = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${streamLink.replace(/^\/+/, '')}` : streamLink;
           }
           const isHls =
             s.type === 'm3u8' ||

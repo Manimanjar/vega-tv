@@ -54,22 +54,26 @@ export const PlayerPage: React.FC = () => {
         throw new Error('No playable video streams returned by provider');
       }
 
-      // Prioritize high-quality and HLS streams first
+      // Prioritize high-speed native browser streams (HLS/MP4) first over raw MKV
       const sorted = [...resolved].sort((a, b) => {
+        const isAMkv = a?.type === 'mkv' || a?.link?.endsWith('.mkv') || a?.link?.includes('.mkv?');
+        const isBMkv = b?.type === 'mkv' || b?.link?.endsWith('.mkv') || b?.link?.includes('.mkv?');
         const aScore =
-          (a.type === 'm3u8' ? 50 : 0) +
-          (a.quality?.includes('1080')
+          (isAMkv ? -100 : 0) +
+          (a?.type === 'm3u8' || a?.link?.includes('.m3u8') ? 60 : 20) +
+          (a?.quality?.includes('1080')
             ? 30
-            : a.quality?.includes('720')
-            ? 20
-            : 10);
+            : a?.quality?.includes('720')
+            ? 15
+            : 5);
         const bScore =
-          (b.type === 'm3u8' ? 50 : 0) +
-          (b.quality?.includes('1080')
+          (isBMkv ? -100 : 0) +
+          (b?.type === 'm3u8' || b?.link?.includes('.m3u8') ? 60 : 20) +
+          (b?.quality?.includes('1080')
             ? 30
-            : b.quality?.includes('720')
-            ? 20
-            : 10);
+            : b?.quality?.includes('720')
+            ? 15
+            : 5);
         return bScore - aScore;
       });
 
@@ -78,21 +82,23 @@ export const PlayerPage: React.FC = () => {
     } catch (err: any) {
       console.warn('Primary stream extraction warning:', err);
       try {
-        const engine = ProviderEngine.getInstance();
-        const ctx = engine.createContext(provider);
-        const base = await ctx.getBaseUrl();
-        const fullLink = targetLink.startsWith('http')
-          ? targetLink
-          : base
-          ? `${base.replace(/\/+$/, '')}/${targetLink.replace(/^\/+/, '')}`
-          : targetLink;
+        // Direct media failover ONLY if targetLink is genuinely a media URL, NOT an HTML webpage, title or JSON!
+        const isMediaUrl =
+          typeof targetLink === 'string' &&
+          (targetLink.startsWith('http://') || targetLink.startsWith('https://')) &&
+          !targetLink.startsWith('{') &&
+          !targetLink.endsWith('/') &&
+          !targetLink.endsWith('.html') &&
+          !targetLink.includes('/download-') &&
+          !targetLink.includes('/archives/') &&
+          (targetLink.includes('.m3u8') || targetLink.includes('.mp4') || targetLink.endsWith('.mkv') || targetLink.includes('.mkv?'));
 
-        if (fullLink.startsWith('http')) {
+        if (isMediaUrl) {
           setStreams([
             {
-              server: 'Direct Stream (Failover)',
-              link: fullLink,
-              type: fullLink.includes('m3u8') ? 'm3u8' : 'mp4',
+              server: 'Direct Media Failover',
+              link: targetLink,
+              type: targetLink.includes('.m3u8') ? 'm3u8' : targetLink.endsWith('.mkv') || targetLink.includes('.mkv?') ? 'mkv' : 'mp4',
               quality: 'Direct',
             },
           ]);
@@ -102,8 +108,8 @@ export const PlayerPage: React.FC = () => {
       } catch {}
 
       setError(
-        err.message ||
-          'Failed to resolve stream link. You may need an active CORS proxy.'
+        err?.message ||
+          'Failed to resolve playable streams. Please return to Details and select an episode, or switch provider.'
       );
       setIsLoading(false);
     }

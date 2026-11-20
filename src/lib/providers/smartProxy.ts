@@ -323,8 +323,37 @@ export class SmartProxyManager {
         }
       }
 
-      if (config.url) {
-        config.url = this.formatUrl(config.url, extraHeaders);
+      let fullUrl = config.url || '';
+      if (config.baseURL && !fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+        const base = config.baseURL.replace(/\/+$/, '');
+        const path = fullUrl.replace(/^\/+/, '');
+        fullUrl = `${base}/${path}`;
+        config.baseURL = undefined;
+      } else if (config.baseURL) {
+        config.baseURL = undefined;
+      }
+
+      // Serialize config.params onto fullUrl before formatting with proxy
+      if (config.params && typeof config.params === 'object') {
+        try {
+          const searchParams = new URLSearchParams();
+          Object.entries(config.params).forEach(([key, val]) => {
+            if (val !== undefined && val !== null) {
+              searchParams.append(key, String(val));
+            }
+          });
+          const queryStr = searchParams.toString();
+          if (queryStr) {
+            fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryStr;
+          }
+          config.params = undefined;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (fullUrl) {
+        config.url = this.formatUrl(fullUrl, extraHeaders);
       }
 
       // In browsers, strip forbidden request headers that trigger XHR errors

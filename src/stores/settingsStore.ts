@@ -21,6 +21,7 @@ export interface SettingsState {
 }
 
 const STORAGE_KEY = 'vega_settings_v5';
+const AUTOEMBED_MIGRATION_KEY = 'vega_migrated_autoembed_v1';
 
 const defaultSettings = {
   corsProxyUrl: '',
@@ -29,14 +30,27 @@ const defaultSettings = {
   autoPlayNext: true,
   playbackSpeed: 1.0,
   skipDuration: 10,
-  activeProviderValue: 'vega',
+  activeProviderValue: 'autoEmbed',
 };
 
 const loadInitialSettings = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      return { ...defaultSettings, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      // One-time migration of legacy default 'vega' to 'autoEmbed' (MultiStream)
+      if (typeof window !== 'undefined' && !localStorage.getItem(AUTOEMBED_MIGRATION_KEY)) {
+        if (!parsed.activeProviderValue || parsed.activeProviderValue === 'vega') {
+          parsed.activeProviderValue = 'autoEmbed';
+        }
+        localStorage.setItem(AUTOEMBED_MIGRATION_KEY, 'true');
+      }
+      if (!parsed.activeProviderValue) {
+        parsed.activeProviderValue = 'autoEmbed';
+      }
+      return { ...defaultSettings, ...parsed };
+    } else if (typeof window !== 'undefined') {
+      localStorage.setItem(AUTOEMBED_MIGRATION_KEY, 'true');
     }
   } catch (e) {
     console.warn('Failed to parse settings from storage:', e);
