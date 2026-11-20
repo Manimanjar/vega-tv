@@ -137,6 +137,12 @@ export class SmartProxyManager {
     return this.isLocalProxyAvailable;
   }
 
+  public isProxyReady(): boolean {
+    if (this.customProxyUrl) return true;
+    if (typeof window !== 'undefined' && !window.location.hostname.includes('github.io')) return true;
+    return this.isLocalProxyAvailable;
+  }
+
   /**
    * URLs that never need a CORS proxy (have native Access-Control-Allow-Origin: *)
    */
@@ -145,10 +151,13 @@ export class SmartProxyManager {
     if (url.startsWith('data:') || url.startsWith('blob:')) return true;
     if (url.includes('raw.githubusercontent.com')) return true;
     if (url.includes('cdn.jsdelivr.net')) return true;
+    if (url.includes('fastly.jsdelivr.net')) return true;
     if (url.includes('image.tmdb.org')) return true;
     if (url.includes('images.metahub.space')) return true;
     if (url.includes('imgbb.fit')) return true;
     if (url.includes('images.unsplash.com')) return true;
+    if (url.includes('cinemeta-catalogs.strem.io')) return true;
+    if (url.includes('v3-cinemeta.strem.io')) return true;
     if (url.includes('test-streams.mux.dev')) return true;
     return false;
   }
@@ -186,20 +195,13 @@ export class SmartProxyManager {
       return `${clean}${separator}url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 
-    // 2. Fullstack host with /api/proxy (Vercel / Cloudflare Pages)
-    if (
-      typeof window !== 'undefined' &&
-      window.location.hostname !== 'localhost' &&
-      !window.location.hostname.includes('github.io')
-    ) {
+    // 2. Fullstack host or local dev with /api/proxy (Vercel / Vite dev / Edge)
+    if (typeof window !== 'undefined' && !window.location.hostname.includes('github.io')) {
       return `/api/proxy?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 
-    // 3. If running over HTTP or local proxy detected
-    if (
-      typeof window !== 'undefined' &&
-      (window.location.protocol === 'http:' || this.isLocalProxyAvailable)
-    ) {
+    // 3. Fallback for static GitHub Pages if local proxy detected
+    if (typeof window !== 'undefined' && this.isLocalProxyAvailable) {
       return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
     }
 

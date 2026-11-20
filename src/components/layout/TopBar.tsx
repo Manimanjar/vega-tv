@@ -27,8 +27,9 @@ export const TopBar: React.FC<TopBarProps> = ({ title, showBack = false }) => {
   const isHome = location.pathname === '/';
 
   useEffect(() => {
+    setHasProxy(smartProxy.isProxyReady());
     return smartProxy.subscribe((proxyUrl, isConnected) => {
-      setHasProxy(isConnected || !!proxyUrl);
+      setHasProxy(smartProxy.isProxyReady() || isConnected || !!proxyUrl);
     });
   }, []);
 

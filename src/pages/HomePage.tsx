@@ -34,9 +34,10 @@ export const HomePage: React.FC = () => {
   const [proxyUrl, setProxyUrl] = useState('');
 
   useEffect(() => {
+    setProxyOnline(smartProxy.isProxyReady());
     return smartProxy.subscribe((url: string, isConn: boolean) => {
       setProxyUrl(url);
-      setProxyOnline(isConn);
+      setProxyOnline(smartProxy.isProxyReady() || isConn);
     });
   }, []);
 
@@ -99,8 +100,8 @@ export const HomePage: React.FC = () => {
           />
           <span>
             {proxyOnline
-              ? 'Streaming Proxy: Online'
-              : 'Streaming Proxy: Tap to Connect (Smart TV / Mobile)'}
+              ? 'Edge Proxy: Active (Line Rate)'
+              : 'Streaming Proxy: Connect (Settings)'}
           </span>
           <Radio className="w-3.5 h-3.5 ml-0.5 opacity-70" />
         </button>

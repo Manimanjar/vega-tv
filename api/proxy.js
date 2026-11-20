@@ -132,9 +132,23 @@ export default async function handler(request) {
             const trimmed = line.trim();
             if (!trimmed) return line;
 
+            // Handle #EXT-X-KEY:METHOD=...,URI="..."
+            if (trimmed.startsWith('#EXT-X-KEY:')) {
+              const match = trimmed.match(/URI=["']?([^"',\s]+)["']?/);
+              if (match) {
+                try {
+                  const keyUrl = new URL(match[1], targetBase).href;
+                  const proxied = `${proxyPath}?url=${encodeURIComponent(keyUrl)}${refParam}${origParam}`;
+                  return trimmed.replace(match[1], proxied);
+                } catch {
+                  return line;
+                }
+              }
+            }
+
             // Handle #EXT-X-MAP:URI="init.mp4"
-            if (trimmed.startsWith('#EXT-X-MAP:URI=')) {
-              const match = trimmed.match(/URI="([^"]+)"/);
+            if (trimmed.startsWith('#EXT-X-MAP:')) {
+              const match = trimmed.match(/URI=["']?([^"',\s]+)["']?/);
               if (match) {
                 try {
                   const segUrl = new URL(match[1], targetBase).href;

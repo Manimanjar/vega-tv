@@ -58,6 +58,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isBuffering, setIsBuffering] = useState(true);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverToast, setServerToast] = useState<string | null>(null);
 
   // New features matching Vega App
   const [isLocked, setIsLocked] = useState(false);
@@ -131,11 +132,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       rawLink.endsWith('.mkv') ||
       rawLink.includes('.mkv?');
 
-    // If stream requires headers (e.g. Referer/Origin), route via proxy to inject them
+    // Intelligent auto-routing:
+    // If stream requires headers (Referer/Origin) or points to a non-CORS CDN, route via proxy
     const hasRequiredHeaders =
       activeStream.headers && Object.keys(activeStream.headers).length > 0;
+    const isCorsFriendly = smartProxy.isDirectCorsFriendly(rawLink);
     const effectiveRouting =
-      hasRequiredHeaders || streamRoutingMode === 'proxy' ? 'proxy' : 'direct';
+      streamRoutingMode === 'proxy' || hasRequiredHeaders || !isCorsFriendly
+        ? 'proxy'
+        : 'direct';
 
     const streamUrl =
       effectiveRouting === 'direct'
@@ -158,9 +163,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (isHls && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
+        lowLatencyMode: false,
+        backBufferLength: 60,
         maxBufferLength: 60,
+        maxMaxBufferLength: 120,
+        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferHole: 0.5,
+        highBufferWatchdogPeriod: 2,
+        nudgeOffset: 0.1,
+        nudgeMaxRetry: 5,
         xhrSetup: (xhr, url) => {
           if (activeStream.headers) {
             Object.entries(activeStream.headers).forEach(([k, v]) => {
@@ -207,11 +218,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         console.warn('HLS stream error:', data);
         if (data.fatal) {
           // If direct manifest failed due to CORS, auto-failover to Edge Proxy
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && streamRoutingMode === 'direct') {
-            console.log('[VideoPlayer] Direct HLS blocked by CORS, auto-failing over to Edge Proxy...');
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && effectiveRouting === 'direct') {
+            console.log('[VideoPlayer] Direct HLS blocked, auto-failing over to Edge Proxy...');
             setStreamRoutingMode('proxy');
             return;
           }
+
+          // If proxy playback still fails or fatal error persists, auto-failover to next server
+          if (currentStreamIndex < streams.length - 1) {
+            const nextServer = streams[currentStreamIndex + 1]?.server || 'next server';
+            console.log(`[VideoPlayer] Auto-failing over to next server: ${nextServer}`);
+            setServerToast(`Stream interrupted. Auto-switching to ${nextServer}...`);
+            setTimeout(() => setServerToast(null), 4000);
+            setCurrentStreamIndex((prev) => prev + 1);
+            return;
+          }
+
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               hls.startLoad();
@@ -220,7 +242,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               hls.recoverMediaError();
               break;
             default:
-              setErrorMessage('Playback error. Please try switching servers or check proxy.');
+              setIsBuffering(false);
+              setErrorMessage('Playback error. Please try switching servers or check proxy settings.');
               break;
           }
         }
@@ -239,25 +262,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       };
 
       const onError = (e: any) => {
-        console.warn('Direct stream playback error on server:', activeStream?.server, e);
-        // Direct CDN playback failed -> auto-failover to Edge Proxy
-        if (streamRoutingMode === 'direct') {
+        console.warn('Stream playback error on server:', activeStream?.server, e);
+        // Direct playback failed -> auto-failover to Edge Proxy
+        if (effectiveRouting === 'direct') {
           console.log('[VideoPlayer] Direct stream failed, auto-failing over to Edge Proxy...');
           setStreamRoutingMode('proxy');
           return;
         }
 
+        // Proxy failed or already in proxy mode -> failover to next stream
         if (currentStreamIndex < streams.length - 1) {
-          console.log(
-            `Failing over from ${activeStream?.server} to next stream:`,
-            streams[currentStreamIndex + 1]?.server
-          );
-          setStreamRoutingMode('direct');
+          const nextServer = streams[currentStreamIndex + 1]?.server || 'next server';
+          console.log(`[VideoPlayer] Failing over to next stream: ${nextServer}`);
+          setServerToast(`Server unavailable. Auto-switching to ${nextServer}...`);
+          setTimeout(() => setServerToast(null), 4000);
           setCurrentStreamIndex((prev) => prev + 1);
         } else {
           setIsBuffering(false);
           setErrorMessage(
-            'Failed to load video stream. Please check your proxy settings or try another quality.'
+            'Failed to load video stream. Please check your proxy settings or try another quality/server.'
           );
         }
       };
@@ -576,6 +599,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <Unlock className="w-4 h-4" />
             <span>Tap to Unlock Screen</span>
           </button>
+        </div>
+      )}
+
+      {/* Floating Server Failover Toast */}
+      {serverToast && (
+        <div className="absolute top-8 z-40 animate-pulse pointer-events-none">
+          <div className="flex items-center gap-2.5 px-5 py-2 rounded-full bg-vega-surface1/95 text-white border border-vega-ctaPrimary/50 shadow-2xl backdrop-blur-xl text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-vega-ctaPrimary animate-ping" />
+            <span>{serverToast}</span>
+          </div>
         </div>
       )}
 

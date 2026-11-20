@@ -121,6 +121,33 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     disabled: false,
     hasSettings: true,
   },
+  {
+    display_name: 'MultiMovies',
+    value: 'multi',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/multi.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'World4uFree',
+    value: 'world4u',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/world4u.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'Cinewood',
+    value: '1cinevood',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/1cinevood.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
 ];
 
 const loadStoredSources = (): ProviderSource[] => {

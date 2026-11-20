@@ -54,7 +54,26 @@ export const PlayerPage: React.FC = () => {
         throw new Error('No playable video streams returned by provider');
       }
 
-      setStreams(resolved);
+      // Prioritize high-quality and HLS streams first
+      const sorted = [...resolved].sort((a, b) => {
+        const aScore =
+          (a.type === 'm3u8' ? 50 : 0) +
+          (a.quality?.includes('1080')
+            ? 30
+            : a.quality?.includes('720')
+            ? 20
+            : 10);
+        const bScore =
+          (b.type === 'm3u8' ? 50 : 0) +
+          (b.quality?.includes('1080')
+            ? 30
+            : b.quality?.includes('720')
+            ? 20
+            : 10);
+        return bScore - aScore;
+      });
+
+      setStreams(sorted);
       setIsLoading(false);
     } catch (err: any) {
       console.warn('Primary stream extraction warning:', err);

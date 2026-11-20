@@ -450,8 +450,18 @@ export class ProviderEngine {
     const loaded = await this.loadProvider(providerValue, sourceUrl);
     if (loaded.catalogFn) {
       const ctx = this.createContext(providerValue);
-      const catalog = await loaded.catalogFn(ctx);
-      if (Array.isArray(catalog) && catalog.length > 0) return catalog;
+      try {
+        const catalog = await loaded.catalogFn(ctx);
+        if (Array.isArray(catalog) && catalog.length > 0) return catalog;
+      } catch {
+        try {
+          const catalog2 = await (loaded.catalogFn as any)({
+            providerContext: ctx,
+            signal: new AbortController().signal,
+          });
+          if (Array.isArray(catalog2) && catalog2.length > 0) return catalog2;
+        } catch {}
+      }
     }
     return [{ title: 'Featured', filter: '' }];
   }
@@ -471,9 +481,20 @@ export class ProviderEngine {
     }
 
     const ctx = this.createContext(providerValue);
-    const posts = await loaded.postsFn(filter, page, ctx);
-    if (Array.isArray(posts)) return posts;
-    return [];
+    const rawPosts = await loaded.postsFn(filter, page, ctx);
+    if (!Array.isArray(rawPosts)) return [];
+
+    const baseUrl = await ctx.getBaseUrl();
+    return rawPosts.map((p) => {
+      let image = p.image || '';
+      if (image && !image.startsWith('http') && !image.startsWith('data:') && !image.startsWith('//')) {
+        image = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${image.replace(/^\/+/, '')}` : image;
+      }
+      return {
+        ...p,
+        image,
+      };
+    });
   }
 
   /**
@@ -487,18 +508,29 @@ export class ProviderEngine {
   ): Promise<Post[]> {
     const loaded = await this.loadProvider(providerValue, sourceUrl);
     const ctx = this.createContext(providerValue);
+    const baseUrl = await ctx.getBaseUrl();
 
+    let rawPosts: Post[] = [];
     if (loaded.searchPostsFn) {
       const posts = await loaded.searchPostsFn(query, page, ctx);
-      if (Array.isArray(posts) && posts.length > 0) return posts;
+      if (Array.isArray(posts) && posts.length > 0) rawPosts = posts;
     }
 
-    if (loaded.postsFn) {
+    if (rawPosts.length === 0 && loaded.postsFn) {
       const posts = await loaded.postsFn(query, page, ctx);
-      if (Array.isArray(posts)) return posts;
+      if (Array.isArray(posts)) rawPosts = posts;
     }
 
-    return [];
+    return rawPosts.map((p) => {
+      let image = p.image || '';
+      if (image && !image.startsWith('http') && !image.startsWith('data:') && !image.startsWith('//')) {
+        image = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${image.replace(/^\/+/, '')}` : image;
+      }
+      return {
+        ...p,
+        image,
+      };
+    });
   }
 
   /**
@@ -510,10 +542,27 @@ export class ProviderEngine {
     sourceUrl?: string
   ): Promise<Info> {
     const loaded = await this.loadProvider(providerValue, sourceUrl);
+    const ctx = this.createContext(providerValue);
+    const baseUrl = await ctx.getBaseUrl();
+
     if (loaded.metaFn) {
-      const ctx = this.createContext(providerValue);
       const meta = await loaded.metaFn(link, ctx);
-      if (meta && meta.title) return meta;
+      if (meta && meta.title) {
+        let image = meta.image || meta.poster || '';
+        let poster = meta.poster || meta.image || '';
+        if (image && !image.startsWith('http') && !image.startsWith('data:') && !image.startsWith('//')) {
+          image = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${image.replace(/^\/+/, '')}` : image;
+        }
+        if (poster && !poster.startsWith('http') && !poster.startsWith('data:') && !poster.startsWith('//')) {
+          poster = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/${poster.replace(/^\/+/, '')}` : poster;
+        }
+
+        return {
+          ...meta,
+          image: image || poster,
+          poster: poster || image,
+        };
+      }
     }
 
     // Direct fallback meta
@@ -554,16 +603,43 @@ export class ProviderEngine {
       ? link
       : `${baseUrl.replace(/\/+$/, '')}/${link.replace(/^\/+/, '')}`;
 
+    const normalizeStreams = (list: Stream[]): Stream[] => {
+      return list
+        .filter((s) => s && s.link)
+        .map((s) => {
+          let streamLink = s.link;
+          if (!streamLink.startsWith('http') && !streamLink.startsWith('blob:')) {
+            streamLink = `${baseUrl.replace(/\/+$/, '')}/${streamLink.replace(/^\/+/, '')}`;
+          }
+          const isHls =
+            s.type === 'm3u8' ||
+            streamLink.includes('.m3u8') ||
+            streamLink.includes('m3u8');
+          return {
+            ...s,
+            link: streamLink,
+            type: isHls ? 'm3u8' : s.type || 'mp4',
+            server: s.server || 'Direct Server',
+            quality: s.quality || (isHls ? 'Auto' : '1080'),
+          };
+        });
+    };
+
     if (loaded.streamFn) {
+      const primaryLink = resolvedLink || link;
       try {
-        const streams = await loaded.streamFn(link, type, ctx);
-        if (Array.isArray(streams) && streams.length > 0) return streams;
+        const streams = await loaded.streamFn(primaryLink, type, ctx);
+        if (Array.isArray(streams) && streams.length > 0) {
+          return normalizeStreams(streams);
+        }
       } catch (e1) {
-        // Retry with fully resolved absolute link
-        if (resolvedLink !== link) {
+        // Fallback to raw link if primary was resolvedLink
+        if (primaryLink !== link) {
           try {
-            const streams2 = await loaded.streamFn(resolvedLink, type, ctx);
-            if (Array.isArray(streams2) && streams2.length > 0) return streams2;
+            const streams2 = await loaded.streamFn(link, type, ctx);
+            if (Array.isArray(streams2) && streams2.length > 0) {
+              return normalizeStreams(streams2);
+            }
           } catch {}
         }
       }
