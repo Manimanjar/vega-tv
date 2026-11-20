@@ -22,6 +22,7 @@ export interface Info {
 export interface Link {
   title: string;
   quality?: string;
+  link?: string;
   directLinks?: DirectLink[];
   episodesLink?: string;
 }

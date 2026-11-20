@@ -247,9 +247,9 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
       const engine = ProviderEngine.getInstance();
       const metaPromise = engine.getMeta(activeProvider.value, link);
 
-      // 6-second safety timeout so DetailPage never hangs
+      // 18-second safety timeout so multi-quality links and episode lists resolve cleanly
       const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 6000)
+        setTimeout(() => resolve(null), 18000)
       );
 
       const detail = await Promise.race([metaPromise, timeoutPromise]);

@@ -51,11 +51,25 @@ export default async function handler(request) {
   try {
     const parsedTarget = new URL(targetUrl);
 
-    // Build upstream request headers
-    const upstreamHeaders = new Headers(request.headers);
-    upstreamHeaders.delete('host');
-    upstreamHeaders.delete('origin');
-    upstreamHeaders.delete('referer');
+    // Build upstream request headers - strip all proxy and datacenter fingerprints
+    const upstreamHeaders = new Headers();
+
+    // Copy only safe headers from request
+    for (const [key, value] of request.headers.entries()) {
+      const lower = key.toLowerCase();
+      if (
+        !lower.startsWith('x-vercel') &&
+        !lower.startsWith('x-forwarded') &&
+        lower !== 'x-real-ip' &&
+        lower !== 'via' &&
+        lower !== 'host' &&
+        lower !== 'origin' &&
+        lower !== 'referer' &&
+        lower !== 'cookie'
+      ) {
+        upstreamHeaders.set(key, value);
+      }
+    }
 
     // Extract custom referer / origin if passed
     const customReferer = reqUrl.searchParams.get('referer') || request.headers.get('x-proxy-referer');
@@ -83,6 +97,10 @@ export default async function handler(request) {
       'User-Agent',
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     );
+    upstreamHeaders.set('Accept-Language', 'en-US,en;q=0.9');
+    upstreamHeaders.set('Sec-Ch-Ua', '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"');
+    upstreamHeaders.set('Sec-Ch-Ua-Mobile', '?0');
+    upstreamHeaders.set('Sec-Ch-Ua-Platform', '"Windows"');
 
     // Forward range header for video player scrubbing
     const range = request.headers.get('range');

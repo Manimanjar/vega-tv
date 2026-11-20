@@ -16,8 +16,11 @@ import {
   ArrowLeft,
   Film,
   Tv,
-  Clock,
   Layers,
+  Zap,
+  HardDrive,
+  Volume2,
+  Sparkles,
 } from 'lucide-react';
 
 export const DetailPage: React.FC = () => {
@@ -35,11 +38,15 @@ export const DetailPage: React.FC = () => {
   const { isInWatchlist, toggleItem } = useWatchlistStore();
   const getProgress = useWatchHistoryStore((state) => state.getProgress);
 
+  // Reset season index whenever navigating between different titles
+  useEffect(() => {
+    setSelectedSeasonIdx(0);
+  }, [link]);
+
   useEffect(() => {
     if (link) {
       loadDetail(link).then((detail) => {
         if (detail && autoPlay) {
-          // Trigger immediate playback for movie or first episode
           handlePlay(detail);
         }
       });
@@ -70,18 +77,126 @@ export const DetailPage: React.FC = () => {
     );
   }
 
-  const isSeries = currentDetail.type === 'series' || (currentDetail.linkList && currentDetail.linkList.length > 1);
+  // A title is a Series ONLY if its type is 'series' or if any link has an episodesLink
+  const hasEpisodesLink = Boolean(currentDetail.linkList?.some((l) => Boolean(l.episodesLink)));
+  const isSeries = currentDetail.type === 'series' || hasEpisodesLink;
   const inWatchlist = isInWatchlist(link);
   const progress = getProgress(link);
 
+  // Derive the best playable direct stream for movies (defaulting to highest resolution: 1080p > 720p > 480p)
+  const bestPlayable = (() => {
+    if (!currentDetail.linkList || currentDetail.linkList.length === 0 || isSeries) return null;
+    const candidates: { link: string; title: string; qualityLabel: string; score: number }[] = [];
+
+    currentDetail.linkList.forEach((group) => {
+      const groupTitle = group.title || '';
+      let score = 50;
+      let qualityLabel = group.quality || 'Direct Stream';
+
+      if (/2160p|4k/i.test(groupTitle)) {
+        score = 400;
+        qualityLabel = '4K UHD';
+      } else if (/1080p/i.test(groupTitle)) {
+        score = 300;
+        qualityLabel = '1080p FHD';
+      } else if (/720p/i.test(groupTitle)) {
+        score = 200;
+        qualityLabel = '720p HD';
+      } else if (/480p/i.test(groupTitle)) {
+        score = 100;
+        qualityLabel = '480p SD';
+      }
+
+      if (/hevc|10bit|x265/i.test(groupTitle)) score += 20;
+
+      if (group.directLinks && group.directLinks.length > 0) {
+        group.directLinks.forEach((dl) => {
+          candidates.push({
+            link: dl.link,
+            title: dl.title || groupTitle,
+            qualityLabel,
+            score,
+          });
+        });
+      } else if (group.link) {
+        candidates.push({
+          link: group.link,
+          title: groupTitle,
+          qualityLabel,
+          score,
+        });
+      }
+    });
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0];
+  })();
+
+  // Parse movie quality tiers matching Vega App
+  const parsedQualityGroups = (() => {
+    if (!currentDetail.linkList || isSeries) return [];
+
+    return currentDetail.linkList.map((group, idx) => {
+      const rawTitle = group.title || `Quality ${idx + 1}`;
+
+      let resolution = group.quality || 'Direct Stream';
+      let resBadge = group.quality || 'Direct';
+      if (/2160p|4k/i.test(rawTitle)) {
+        resolution = '4K Ultra HD (2160p)';
+        resBadge = '4K UHD';
+      } else if (/1080p/i.test(rawTitle)) {
+        resolution = 'Full HD (1080p)';
+        resBadge = '1080p FHD';
+      } else if (/720p/i.test(rawTitle)) {
+        resolution = 'HD (720p)';
+        resBadge = '720p HD';
+      } else if (/480p/i.test(rawTitle)) {
+        resolution = 'SD (480p)';
+        resBadge = '480p SD';
+      }
+
+      const sizeMatch = rawTitle.match(/\[(.*?)\]/);
+      const size = sizeMatch ? sizeMatch[1] : undefined;
+
+      const audioMatch = rawTitle.match(/\{(.*?)\}/);
+      const audio = audioMatch ? audioMatch[1] : undefined;
+
+      let codec = '';
+      if (/10bit/i.test(rawTitle)) codec = '10-Bit HEVC';
+      else if (/hevc|x265/i.test(rawTitle)) codec = 'HEVC';
+      else if (/x264|h\.264/i.test(rawTitle)) codec = 'x264';
+
+      const directLinks =
+        group.directLinks && group.directLinks.length > 0
+          ? group.directLinks
+          : group.link
+          ? [{ title: 'Play Direct Server', link: group.link }]
+          : [];
+
+      return {
+        rawTitle,
+        resolution,
+        resBadge,
+        size,
+        audio,
+        codec,
+        directLinks,
+      };
+    });
+  })();
+
   const handlePlay = (detail: typeof currentDetail, directLink?: string, episodeTitle?: string) => {
-    const streamLink = directLink || link;
+    // If no direct link specified, use bestPlayable link (e.g. 1080p) or fallback to item link
+    const target = directLink || bestPlayable?.link || link;
     const playTitle = episodeTitle
       ? `${detail.title} - ${episodeTitle}`
+      : bestPlayable && !directLink
+      ? `${detail.title} (${bestPlayable.qualityLabel})`
       : detail.title;
 
     navigate(
-      `/player?link=${encodeURIComponent(streamLink)}&title=${encodeURIComponent(
+      `/player?link=${encodeURIComponent(target)}&title=${encodeURIComponent(
         playTitle
       )}&poster=${encodeURIComponent(detail.poster || detail.image)}&provider=${
         activeProvider?.value || 'unknown'
@@ -167,6 +282,13 @@ export const DetailPage: React.FC = () => {
                 ★ {currentDetail.rating}
               </Badge>
             )}
+
+            {bestPlayable && (
+              <Badge variant="frosted" className="text-emerald-400 font-semibold flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                <span>{bestPlayable.qualityLabel} Available</span>
+              </Badge>
+            )}
           </div>
 
           {/* Title */}
@@ -182,13 +304,17 @@ export const DetailPage: React.FC = () => {
               data-focusable="true"
               navSection="detail-actions"
               onClick={() => {
-                const firstDirect = currentDetail.linkList?.[0]?.directLinks?.[0];
-                if (firstDirect) {
-                  handlePlay(currentDetail, firstDirect.link, firstDirect.title);
+                if (bestPlayable) {
+                  handlePlay(currentDetail, bestPlayable.link, bestPlayable.title);
                 } else if (isSeries) {
-                  const el = document.querySelector('[data-nav-section="detail-episodes"]');
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  const firstEp = currentDetail.linkList?.[0]?.directLinks?.[0];
+                  if (firstEp) {
+                    handlePlay(currentDetail, firstEp.link, firstEp.title);
+                  } else {
+                    const el = document.querySelector('[data-nav-section="detail-episodes"]');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
                   }
                 } else {
                   handlePlay(currentDetail);
@@ -197,7 +323,15 @@ export const DetailPage: React.FC = () => {
               className="gap-2.5 shadow-xl hover:shadow-2xl"
             >
               <Play className="w-5 h-5 fill-current" />
-              <span>{progress ? 'Resume Play' : 'Play Now'}</span>
+              <span>
+                {progress
+                  ? 'Resume Play'
+                  : bestPlayable
+                  ? `Play in ${bestPlayable.qualityLabel}`
+                  : isSeries && currentDetail.linkList?.[0]?.directLinks?.[0]
+                  ? 'Play Season 1 Ep 1'
+                  : 'Play Now'}
+              </span>
             </Button>
 
             <Button
@@ -253,13 +387,89 @@ export const DetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Series Seasons & Episodes List */}
-      {currentDetail.linkList && currentDetail.linkList.length > 0 && (
+      {/* MOVIE: Select Quality & Direct Server Sources (Exact Vega App Parity) */}
+      {!isSeries && parsedQualityGroups.length > 0 && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 mt-12" data-nav-section="detail-qualities">
+          <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Layers className="w-5 h-5 text-vega-ctaPrimary" />
+              <span>Available Qualities & Direct Servers</span>
+            </h2>
+            <span className="text-xs text-vega-textSecondary">
+              {parsedQualityGroups.length} Quality {parsedQualityGroups.length === 1 ? 'Tier' : 'Tiers'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {parsedQualityGroups.map((grp, qIdx) => (
+              <div
+                key={qIdx}
+                className="p-4 sm:p-5 rounded-2xl bg-vega-surface1/80 border border-white/10 hover:border-white/20 transition-all space-y-3"
+              >
+                {/* Quality Header Bar */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-vega-ctaPrimary/20 text-vega-ctaPrimary border border-vega-ctaPrimary/30 font-bold text-xs">
+                      {grp.resBadge}
+                    </span>
+                    <span className="text-sm font-bold text-white">
+                      {grp.resolution}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {grp.size && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 text-[11px] font-semibold text-white/90">
+                        <HardDrive className="w-3 h-3 text-vega-textSecondary" />
+                        {grp.size}
+                      </span>
+                    )}
+
+                    {grp.codec && (
+                      <span className="px-2 py-0.5 rounded-md bg-white/5 text-[11px] font-semibold text-vega-textSecondary">
+                        {grp.codec}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Audio Details Pill */}
+                {grp.audio && (
+                  <div className="flex items-center gap-1.5 text-xs text-vega-textSecondary">
+                    <Volume2 className="w-3.5 h-3.5 text-vega-ctaPrimary" />
+                    <span>Dual / Multi Audio: <strong className="text-white/80">{grp.audio}</strong></span>
+                  </div>
+                )}
+
+                {/* Direct Server Buttons */}
+                <div className="pt-1 flex flex-wrap gap-2">
+                  {grp.directLinks.map((dl, dlIdx) => (
+                    <button
+                      key={dlIdx}
+                      type="button"
+                      data-focusable="true"
+                      data-nav-section="detail-qualities"
+                      onClick={() => handlePlay(currentDetail, dl.link, `${grp.resBadge} - ${dl.title}`)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-vega-surface2 hover:bg-vega-ctaPrimary hover:text-vega-ctaText text-white text-xs font-semibold transition-all group active:scale-95 border border-white/5"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-vega-ctaPrimary group-hover:text-vega-ctaText fill-current" />
+                      <span className="truncate max-w-[200px]">{dl.title || `Server ${dlIdx + 1}`}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SERIES: Seasons & Episodes List */}
+      {isSeries && currentDetail.linkList && currentDetail.linkList.length > 0 && (
         <div className="max-w-6xl mx-auto px-4 sm:px-8 mt-12" data-nav-section="detail-episodes">
           <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Tv className="w-5 h-5 text-vega-textSecondary" />
-              <span>Episodes & Sources</span>
+              <span>Episodes & Seasons</span>
             </h2>
 
             {/* Season Selector Tabs */}
@@ -285,7 +495,7 @@ export const DetailPage: React.FC = () => {
             )}
           </div>
 
-          {/* Episode rows for selected group */}
+          {/* Episode rows for selected season */}
           <div className="space-y-2.5">
             {(!currentDetail.linkList[selectedSeasonIdx]?.directLinks || currentDetail.linkList[selectedSeasonIdx]?.directLinks?.length === 0) && (
               <div className="p-8 rounded-2xl bg-vega-surface1 text-center border border-white/5 flex flex-col items-center gap-3">

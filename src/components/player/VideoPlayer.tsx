@@ -76,6 +76,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [qualities, setQualities] = useState<QualityOption[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 auto
 
+  const [audioTracks, setAudioTracks] = useState<{ id: number; name: string; lang?: string }[]>([]);
+  const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(-1);
+
+  const handleAudioSelect = useCallback((trackId: number) => {
+    if (hlsRef.current) {
+      hlsRef.current.audioTrack = trackId;
+      setCurrentAudioTrack(trackId);
+    }
+  }, []);
+
   const { playbackSpeed, setPlaybackSpeed } = useSettingsStore();
   const { updateProgress, getProgress } = useWatchHistoryStore();
 
@@ -138,6 +148,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const video = videoRef.current;
     setErrorMessage(null);
     setIsBuffering(true);
+    setAudioTracks([]);
+    setCurrentAudioTrack(-1);
+    setQualities([]);
+    setCurrentQuality(-1);
     try {
       (video as any).referrerPolicy = 'no-referrer';
     } catch {}
@@ -221,6 +235,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ];
         setQualities(qualityOptions);
 
+        // Audio Tracks initialization
+        if (hls.audioTracks && hls.audioTracks.length > 0) {
+          const parsedAudio = hls.audioTracks.map((t, idx) => ({
+            id: idx,
+            name: t.name || t.lang || `Audio Track ${idx + 1}`,
+            lang: t.lang || undefined,
+          }));
+          setAudioTracks(parsedAudio);
+          setCurrentAudioTrack(hls.audioTrack);
+        } else {
+          setAudioTracks([]);
+          setCurrentAudioTrack(-1);
+        }
+
         if (initialSeek > 0) {
           video.currentTime = initialSeek;
         }
@@ -228,6 +256,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.play().catch(() => {
           setIsPlaying(false);
         });
+      });
+
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_, data) => {
+        if (data.audioTracks && data.audioTracks.length > 0) {
+          const parsedAudio = data.audioTracks.map((t, idx) => ({
+            id: idx,
+            name: t.name || t.lang || `Audio Track ${idx + 1}`,
+            lang: t.lang || undefined,
+          }));
+          setAudioTracks(parsedAudio);
+          setCurrentAudioTrack(hls.audioTrack);
+        }
+      });
+
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_, data) => {
+        setCurrentAudioTrack(data.id);
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
@@ -776,6 +820,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         playbackSpeed={playbackSpeed}
         qualities={qualities}
         currentQuality={currentQuality}
+        audioTracks={audioTracks}
+        currentAudioTrack={currentAudioTrack}
         streams={streams}
         currentStreamIndex={currentStreamIndex}
         streamRoutingMode={streamRoutingMode}
@@ -794,6 +840,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onCycleAspectRatio={handleCycleAspectRatio}
         onSpeedChange={handleSpeedChange}
         onQualitySelect={handleQualitySelect}
+        onAudioSelect={handleAudioSelect}
         onStreamSelect={handleStreamSelect}
         onEpisodeSelect={onSelectEpisode}
         onBack={onBack}

@@ -16,10 +16,12 @@ import {
   Scaling,
   ListVideo,
   Zap,
+  Languages,
 } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
 import { QualitySelector, QualityOption } from './QualitySelector';
 import { ServerSelector } from './ServerSelector';
+import { AudioSelector, AudioTrackOption } from './AudioSelector';
 import { Stream } from '../../lib/providers/types';
 
 export type AspectRatioMode = 'contain' | 'cover' | 'fill';
@@ -43,6 +45,8 @@ interface PlayerControlsProps {
   playbackSpeed: number;
   qualities: QualityOption[];
   currentQuality: number;
+  audioTracks?: AudioTrackOption[];
+  currentAudioTrack?: number;
   streams: Stream[];
   currentStreamIndex: number;
   streamRoutingMode?: 'direct' | 'proxy';
@@ -61,6 +65,7 @@ interface PlayerControlsProps {
   onCycleAspectRatio: () => void;
   onSpeedChange: (speed: number) => void;
   onQualitySelect: (index: number) => void;
+  onAudioSelect?: (id: number) => void;
   onStreamSelect: (index: number) => void;
   onEpisodeSelect?: (ep: EpisodeItem) => void;
   onBack: () => void;
@@ -80,6 +85,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   playbackSpeed,
   qualities,
   currentQuality,
+  audioTracks = [],
+  currentAudioTrack = -1,
   streams,
   currentStreamIndex,
   streamRoutingMode = 'direct',
@@ -98,11 +105,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onCycleAspectRatio,
   onSpeedChange,
   onQualitySelect,
+  onAudioSelect,
   onStreamSelect,
   onEpisodeSelect,
   onBack,
 }) => {
   const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [showEpisodesMenu, setShowEpisodesMenu] = useState(false);
 
@@ -197,6 +206,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                   setShowEpisodesMenu((prev) => !prev);
                   setShowServerMenu(false);
                   setShowQualityMenu(false);
+                  setShowAudioMenu(false);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-colors"
               >
@@ -243,6 +253,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                 onClick={() => {
                   setShowServerMenu((prev) => !prev);
                   setShowQualityMenu(false);
+                  setShowAudioMenu(false);
                   setShowEpisodesMenu(false);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-colors"
@@ -393,6 +404,39 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               {playbackSpeed}x
             </button>
 
+            {/* Audio Track Selector (Hindi, English, Dual Audio) */}
+            {audioTracks && audioTracks.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  data-focusable="true"
+                  data-nav-section="player-bottom"
+                  onClick={() => {
+                    setShowAudioMenu((prev) => !prev);
+                    setShowQualityMenu(false);
+                    setShowServerMenu(false);
+                    setShowEpisodesMenu(false);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/50 hover:bg-white/20 text-xs font-semibold backdrop-blur-md transition-colors"
+                  title="Select Audio Language"
+                >
+                  <Languages className="w-3.5 h-3.5 text-vega-ctaPrimary" />
+                  <span className="max-w-[80px] truncate">
+                    {audioTracks.find((a) => a.id === currentAudioTrack)?.name || 'Audio'}
+                  </span>
+                </button>
+
+                {showAudioMenu && onAudioSelect && (
+                  <AudioSelector
+                    tracks={audioTracks}
+                    currentTrackId={currentAudioTrack}
+                    onSelect={onAudioSelect}
+                    onClose={() => setShowAudioMenu(false)}
+                  />
+                )}
+              </div>
+            )}
+
             {/* Quality Selector */}
             {qualities.length > 0 && (
               <div className="relative">
@@ -402,6 +446,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                   data-nav-section="player-bottom"
                   onClick={() => {
                     setShowQualityMenu((prev) => !prev);
+                    setShowAudioMenu(false);
                     setShowServerMenu(false);
                     setShowEpisodesMenu(false);
                   }}
