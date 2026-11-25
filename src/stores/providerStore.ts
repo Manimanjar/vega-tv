@@ -3,7 +3,6 @@ import { ProviderManifest, ProviderSource } from '../lib/providers/types';
 import {
   ProviderEngine,
   ZENDA_SOURCE_URL,
-  MANI_SOURCE_URL,
   normalizeSourceUrl,
 } from '../lib/providers/providerEngine';
 import { useSettingsStore } from './settingsStore';
@@ -32,12 +31,6 @@ export const DEFAULT_SOURCES: ProviderSource[] = [
     id: 'zenda-official',
     name: 'Vega Movies & Series (Official Zenda)',
     url: ZENDA_SOURCE_URL,
-    enabled: true,
-  },
-  {
-    id: 'mani-video-providers',
-    name: "Mani's Video Providers (Ddose007, FilmyFly, FapHouse)",
-    url: MANI_SOURCE_URL,
     enabled: true,
   },
 ];
@@ -194,36 +187,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     disabled: false,
     hasSettings: true,
   },
-  // Providers that only exist in Mani's video-providers repo (not Zenda).
-  // Kept in the fallback list so they still appear if the live manifest
-  // fetch fails.
-  {
-    display_name: 'Ddose007',
-    value: 'ddose007',
-    version: '1.1.0',
-    icon: 'https://cdn-icons-png.flaticon.com/512/831/831331.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'FilmyFly',
-    value: 'filmyfly',
-    version: '1.0.3',
-    icon: 'https://img.iwebp.store/images/files/afaa901b76bc48d57a346319423035dd384208.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'FapHouse',
-    value: 'faphouse',
-    version: '1.0.1',
-    icon: 'https://assets-nss.fhcdnmedia.online/9d3f29d8666549ad223adec08efdc848cffcf297/fap-site/default/images/favicons/favicon-96x96.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
 ];
 
 const loadStoredSources = (): ProviderSource[] => {
@@ -237,10 +200,7 @@ const loadStoredSources = (): ProviderSource[] => {
             (s) =>
               s &&
               s.url &&
-              // Mani's own video-providers repo is an allowed source
-              // (Ddose007 etc.); other Manimanjar URLs are still dropped.
-              (!s.url.includes('Manimanjar') ||
-                s.url.includes('Manimanjar/vega-providers')) &&
+              !s.url.includes('Manimanjar') &&
               !s.id?.includes('custom-vega')
           )
           .map((s) => ({
