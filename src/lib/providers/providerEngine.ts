@@ -15,23 +15,13 @@ import { createKvStore } from './kvStore';
 export const ZENDA_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main';
 export const DEFAULT_SOURCE_URL = ZENDA_SOURCE_URL;
 
-// Mani's own video-providers repo. It hosts providers Zenda does not
-// have (Ddose007, FilmyFly, FapHouse). The web app loads manifests from
-// it as a second source, and its dist files are a fallback when a
-// provider is not in Zenda's repo.
-export const MANI_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/Manimanjar/vega-providers@main';
-
 export function normalizeSourceUrl(url: string): string {
   if (!url) return ZENDA_SOURCE_URL;
   const clean = url.trim().replace(/\/+$/, '');
   if (
-    clean.includes('raw.githubusercontent.com/Zenda-Cross/vega-providers/main')
+    clean.includes('raw.githubusercontent.com/Zenda-Cross/vega-providers/main') ||
+    clean.includes('Manimanjar')
   ) {
-    return ZENDA_SOURCE_URL;
-  }
-  // Mani's own video-providers repo is an allowed source (Ddose007 etc.).
-  // Any other Manimanjar URL still falls back to Zenda.
-  if (clean.includes('Manimanjar') && !clean.includes('Manimanjar/vega-providers')) {
     return ZENDA_SOURCE_URL;
   }
   return clean;
@@ -340,12 +330,6 @@ export class ProviderEngine {
         `${cleanSource}/dist/${providerValue}/${fileName}`,
         cleanSource.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
         `https://raw.githubusercontent.com/Zenda-Cross/vega-providers/main/dist/${providerValue}/${fileName}`,
-        // Providers that only exist in Mani's repo (Ddose007, FilmyFly,
-        // FapHouse) are not in Zenda's repo, so the Zenda candidates
-        // above 404 for them. Fall back to Mani's repo dist files.
-        `${MANI_SOURCE_URL}/dist/${providerValue}/${fileName}`,
-        MANI_SOURCE_URL.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net') + `/dist/${providerValue}/${fileName}`,
-        `https://raw.githubusercontent.com/Manimanjar/vega-providers/main/dist/${providerValue}/${fileName}`,
       ];
 
       for (const fileUrl of candidatePaths) {
