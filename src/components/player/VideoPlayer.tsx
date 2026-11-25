@@ -167,12 +167,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       rawLink.includes('.mkv?');
 
     // Intelligent auto-routing:
-    // If stream requires headers (Referer/Origin) or points to a non-CORS CDN, route via proxy
+    // Plain MP4/MKV files play directly in a <video> element: media playback
+    // does NOT need CORS, and routing them through the shared Edge proxy gets
+    // the video host's datacenter-IP block / rate-limit (HTTP 426/429) — that
+    // is why MovieBox Web movies resolved streams but never played ("Failed
+    // to load video stream"). Only HLS (hls.js fetches playlists/segments
+    // via XHR) genuinely needs the proxy for CORS/headers. Direct-first is
+    // safe: on any direct failure the player already fails over to proxy
+    // mode (see the error handlers below), and the user can still force
+    // proxy mode with the routing toggle.
     const hasRequiredHeaders =
       activeStream.headers && Object.keys(activeStream.headers).length > 0;
     const isCorsFriendly = smartProxy.isDirectCorsFriendly(rawLink);
     const effectiveRouting =
-      streamRoutingMode === 'proxy' || hasRequiredHeaders || !isCorsFriendly
+      streamRoutingMode === 'proxy'
+        ? 'proxy'
+        : !isHls
+        ? 'direct'
+        : hasRequiredHeaders || !isCorsFriendly
         ? 'proxy'
         : 'direct';
 
