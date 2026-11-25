@@ -83,6 +83,25 @@ export const DISALLOWED_PROVIDERS = new Set([
   'uniquestream',
   'cinefreak',
   'everything',
+  // 15 broken providers removed 2026-11-25 (live sweep: catalog -> posts ->
+  // meta -> getStream returned no playable streams or a hard error).
+  // These are broken in Zenda's provider code / their upstream sites, not
+  // in this repo; re-check and remove from this list if one starts working.
+  'drive', // 0 streams (6 direct links, none resolve)
+  'mod', // 0 streams
+  'uhd', // 0 streams
+  'topmovies', // 0 streams
+  'mxplayer', // 0 streams
+  'youtube', // 0 streams
+  '1flex', // 0 streams
+  'gokuhd', // HubCloud extract failed
+  'eonmovies', // no supported download mirrors
+  'showbox', // metadata 403, 0 streams
+  'luxmovies', // HubCloud extract failed (403)
+  'animesalt', // 0 posts (403)
+  'animeworld', // 0 posts
+  'zeefliz', // posts failed: _c.delete is not a function
+  'moviezwap', // posts failed: HTTP 522
 ]);
 
 // Fallback manifests available instantly offline (Strictly Official, Verified Active Zenda Providers)
@@ -106,15 +125,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'MoviesDrive',
-    value: 'drive',
-    version: '2.30',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/drive.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
     display_name: '4K HD Hub',
     value: '4khdhub',
     version: '2.1',
@@ -124,37 +134,10 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'MoviesMod',
-    value: 'mod',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/mod.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'UHDMovies',
-    value: 'uhd',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/uhd.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
     display_name: 'KatMoviesHd',
     value: 'katmovies',
     version: '2.4',
     icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/katmovies.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'GokuHD',
-    value: 'gokuHD',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/gokuHD.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -178,37 +161,10 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'RogMovies',
-    value: 'luxMovies',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/luxMovies.png',
-    type: 'india',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
     display_name: 'Castle TV',
     value: 'castle',
     version: '2.0',
     icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/castle.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: 'AnimeWorld',
-    value: 'animeworld',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/animeworld.png',
-    type: 'anime',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
-    display_name: '1Flex',
-    value: '1flex',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/1flex.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
