@@ -146,10 +146,22 @@ export const PlayerPage: React.FC = () => {
   const allEpisodes = React.useMemo(() => {
     if (!metaInfo?.linkList) return [];
     const list: { title: string; link: string }[] = [];
+    // MovieBox lists the same episode once per audio language group (8x).
+    // Collapse those duplicates by their season/episode title ("S01 E01"),
+    // which is unique per episode; titles without that pattern are kept
+    // as-is so providers with generic "Episode 1" titles lose nothing.
+    const seenSeasonEp = new Set<string>();
     metaInfo.linkList.forEach((group) => {
       group.directLinks?.forEach((item) => {
+        const title = item.title || group.title;
+        const m = /S(\d+)\s*E(\d+)/i.exec(title);
+        if (m) {
+          const key = `S${m[1]}E${m[2]}`;
+          if (seenSeasonEp.has(key)) return;
+          seenSeasonEp.add(key);
+        }
         list.push({
-          title: item.title || group.title,
+          title,
           link: item.link,
         });
       });

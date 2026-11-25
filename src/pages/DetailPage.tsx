@@ -32,15 +32,31 @@ export const DetailPage: React.FC = () => {
 
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
   const [selectedSeasonIdx, setSelectedSeasonIdx] = useState(0);
+  // Season number picked inside the selected language group (null = first season).
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   const activeProvider = useProviderStore((state) => state.activeProvider);
   const { currentDetail, isLoadingDetail, loadDetail } = useContentStore();
   const { isInWatchlist, toggleItem } = useWatchlistStore();
   const getProgress = useWatchHistoryStore((state) => state.getProgress);
 
+  // Seasons present in the selected language group's episodes, parsed from
+  // titles like "S01 E01". MovieBox titles carry this; other providers may
+  // not, in which case this is empty and no season tabs are shown.
+  const episodeSeasons = React.useMemo(() => {
+    const eps = currentDetail?.linkList?.[selectedSeasonIdx]?.directLinks || [];
+    const set = new Set<number>();
+    eps.forEach((ep) => {
+      const m = /S(\d+)\s*E\d+/i.exec(ep.title || '');
+      if (m) set.add(parseInt(m[1], 10));
+    });
+    return [...set].sort((a, b) => a - b);
+  }, [currentDetail, selectedSeasonIdx]);
+
   // Reset season index whenever navigating between different titles
   useEffect(() => {
     setSelectedSeasonIdx(0);
+    setSelectedSeason(null);
   }, [link]);
 
   useEffect(() => {
@@ -82,6 +98,25 @@ export const DetailPage: React.FC = () => {
   const isSeries = currentDetail.type === 'series' || hasEpisodesLink;
   const inWatchlist = isInWatchlist(link);
   const progress = getProgress(link);
+
+  // Season actually shown: the picked season if it exists in this group,
+  // otherwise the first season present (so switching language never strands
+  // the view on a season that group does not have).
+  const activeSeason =
+    selectedSeason !== null && episodeSeasons.includes(selectedSeason)
+      ? selectedSeason
+      : episodeSeasons[0] ?? null;
+  // Episodes shown for the selected language group, narrowed to the active
+  // season when seasons could be parsed; otherwise the whole flat list.
+  const visibleEpisodes = (() => {
+    const eps = currentDetail.linkList?.[selectedSeasonIdx]?.directLinks || [];
+    if (activeSeason === null) return eps;
+    const filtered = eps.filter((ep) => {
+      const m = /S(\d+)\s*E\d+/i.exec(ep.title || '');
+      return m ? parseInt(m[1], 10) === activeSeason : false;
+    });
+    return filtered.length > 0 ? filtered : eps;
+  })();
 
   // Derive the best playable direct stream for movies (defaulting to highest resolution: 1080p > 720p > 480p)
   const bestPlayable = (() => {
@@ -332,7 +367,7 @@ export const DetailPage: React.FC = () => {
                   : bestPlayable
                   ? `Play in ${bestPlayable.qualityLabel}`
                   : isSeries && currentDetail.linkList?.[0]?.directLinks?.[0]
-                  ? 'Play Season 1 Ep 1'
+                  ? `Play ${currentDetail.linkList[0].directLinks[0].title || 'Episode 1'}`
                   : 'Play Now'}
               </span>
             </Button>
@@ -475,7 +510,7 @@ export const DetailPage: React.FC = () => {
               <span>Episodes & Seasons</span>
             </h2>
 
-            {/* Season Selector Tabs */}
+            {/* Audio / Language Tabs (each linkList group is one audio variant) */}
             {currentDetail.linkList.length > 1 && (
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                 {currentDetail.linkList.map((season, idx) => (
@@ -498,9 +533,31 @@ export const DetailPage: React.FC = () => {
             )}
           </div>
 
+          {/* Season Tabs (parsed from episode titles like "S01 E01") */}
+          {episodeSeasons.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-4">
+              {episodeSeasons.map((se) => (
+                <button
+                  key={se}
+                  type="button"
+                  data-focusable="true"
+                  data-nav-section="detail-episodes"
+                  onClick={() => setSelectedSeason(se)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    activeSeason === se
+                      ? 'bg-vega-ctaPrimary text-vega-ctaText shadow-sm'
+                      : 'bg-vega-surface2 text-vega-textSecondary hover:text-white'
+                  }`}
+                >
+                  {`Season ${se}`}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Episode rows for selected season */}
           <div className="space-y-2.5">
-            {(!currentDetail.linkList[selectedSeasonIdx]?.directLinks || currentDetail.linkList[selectedSeasonIdx]?.directLinks?.length === 0) && (
+            {visibleEpisodes.length === 0 && (
               <div className="p-8 rounded-2xl bg-vega-surface1 text-center border border-white/5 flex flex-col items-center gap-3">
                 <p className="text-sm font-semibold text-white">
                   No direct episode streams extracted for {currentDetail.linkList[selectedSeasonIdx]?.title || 'this season'}.
@@ -525,7 +582,7 @@ export const DetailPage: React.FC = () => {
               </div>
             )}
 
-            {currentDetail.linkList[selectedSeasonIdx]?.directLinks?.map((ep, epIdx) => {
+            {visibleEpisodes.map((ep, epIdx) => {
               const epProgress = getProgress(ep.link);
               const watchedPct =
                 epProgress && epProgress.duration > 0
