@@ -717,14 +717,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {isCurrentStreamMkv && errorMessage && !isMkvGuidanceDismissed && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 p-6 z-40 text-center max-w-lg mx-auto"
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 p-6 z-40 text-center max-w-lg mx-auto"
         >
           <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-4">
             <Film className="w-7 h-7" />
           </div>
           <h2 className="text-xl font-bold text-white mb-2">Matroska (MKV) Stream Detected</h2>
           <p className="text-xs sm:text-sm text-vega-textSecondary mb-6 leading-relaxed">
-            Standard web browsers cannot decode MKV video containers directly. For instant browser streaming, switch to MultiStream (4K/1080p HLS) or open in an external video player (VLC / MX Player).
+            Standard web browsers cannot decode MKV video containers directly. For the highest 30+ Mbps speed with full hardware audio/video acceleration, open in an external video player or switch to MultiStream (4K/1080p HLS).
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 w-full">
             {activeStream?.link &&
@@ -732,10 +732,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <>
                   <a
                     href={`vlc://${activeStream.link}`}
-                    className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white flex items-center justify-center gap-2"
+                    className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white flex items-center justify-center gap-2 shadow-lg"
                   >
                     <Play className="w-4 h-4 fill-current" />
                     <span>Open in VLC</span>
+                  </a>
+                  <a
+                    href={`intent://${activeStream.link.replace(/^https?:\/\//, '')}#Intent;action=android.intent.action.VIEW;type=video/*;end`}
+                    className="px-5 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Open in App Player</span>
                   </a>
                   <a
                     href={activeStream.link}
@@ -775,31 +782,53 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error state with external player and failover options */}
       {errorMessage && !isCurrentStreamMkv && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 p-6 z-40 text-center"
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 p-6 z-40 text-center max-w-md mx-auto"
         >
           <div className="w-14 h-14 rounded-2xl bg-vega-surface2 flex items-center justify-center mb-4 text-vega-error border border-vega-error/30">
             <span className="text-2xl font-bold">!</span>
           </div>
           <h2 className="text-lg font-bold text-white mb-2">{errorMessage}</h2>
-          <p className="text-sm text-vega-textSecondary mb-6 max-w-sm">
-            Check your CORS proxy configuration or switch to another server.
+          <p className="text-xs sm:text-sm text-vega-textSecondary mb-6">
+            Direct web playback failed on this stream. You can launch an external media player, try another server, or switch provider.
           </p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                if (streams.length > 1) {
+          <div className="flex flex-wrap items-center justify-center gap-3 w-full">
+            {activeStream?.link && (activeStream.link.startsWith('http://') || activeStream.link.startsWith('https://')) && (
+              <>
+                <a
+                  href={`vlc://${activeStream.link}`}
+                  className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-xs sm:text-sm font-semibold hover:bg-white flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Open in VLC</span>
+                </a>
+                <a
+                  href={`intent://${activeStream.link.replace(/^https?:\/\//, '')}#Intent;action=android.intent.action.VIEW;type=video/*;end`}
+                  className="px-5 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>External Player</span>
+                </a>
+              </>
+            )}
+            {streams.length > 1 && (
+              <button
+                onClick={() => {
                   setCurrentStreamIndex((prev) => (prev + 1) % streams.length);
-                } else {
-                  onBack();
-                }
-              }}
-              className="px-5 py-2.5 rounded-full bg-vega-ctaPrimary text-vega-ctaText text-sm font-semibold hover:bg-white"
+                }}
+                className="px-5 py-2.5 rounded-full bg-white/10 text-white text-xs sm:text-sm font-semibold hover:bg-white/20 border border-white/10"
+              >
+                Try Next Server
+              </button>
+            )}
+            <button
+              onClick={onBack}
+              className="px-5 py-2.5 rounded-full bg-white/5 text-white/70 text-xs sm:text-sm font-semibold hover:bg-white/10 border border-white/5"
             >
-              {streams.length > 1 ? 'Try Next Server' : 'Go Back'}
+              Go Back
             </button>
           </div>
         </div>

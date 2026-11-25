@@ -103,13 +103,13 @@ export class SmartProxyManager {
     }
 
     this.isTesting = false;
-    this.notifyListeners(!!this.customProxyUrl);
+    this.notifyListeners(this.isProxyReady());
     return false;
   }
 
   public subscribe(cb: (proxyUrl: string, isConnected: boolean) => void): () => void {
     this.listeners.add(cb);
-    cb(this.customProxyUrl, !!this.customProxyUrl);
+    cb(this.customProxyUrl, this.isProxyReady());
     return () => this.listeners.delete(cb);
   }
 
@@ -180,9 +180,18 @@ export class SmartProxyManager {
       if (orig) origParam = `&origin=${encodeURIComponent(orig)}`;
     }
 
+    // Remap dead/migrated scraper domains
+    let cleanTarget = targetUrl;
+    if (cleanTarget.includes('hubcloud.cx')) {
+      cleanTarget = cleanTarget.replace('hubcloud.cx', 'hubcloud.mov');
+    }
+    if (cleanTarget.includes('hubcloud.club')) {
+      cleanTarget = cleanTarget.replace('hubcloud.club', 'hubcloud.mov');
+    }
+
     // If already routed through proxy, don't double proxy
-    if (targetUrl.includes('?url=') || targetUrl.includes('/api/proxy')) {
-      return targetUrl;
+    if (cleanTarget.includes('?url=') || cleanTarget.includes('/api/proxy')) {
+      return cleanTarget;
     }
 
     // 1. User configured proxy or detected local proxy
@@ -190,22 +199,22 @@ export class SmartProxyManager {
       const clean = this.customProxyUrl.replace(/\/+$/, '');
       const separator = clean.includes('?') ? '&' : '?';
       if (clean.includes('?url=') || clean.endsWith('=')) {
-        return `${clean}${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
+        return `${clean}${encodeURIComponent(cleanTarget)}${refParam}${origParam}`;
       }
-      return `${clean}${separator}url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
+      return `${clean}${separator}url=${encodeURIComponent(cleanTarget)}${refParam}${origParam}`;
     }
 
     // 2. Fullstack host or local dev with /api/proxy (Vercel / Vite dev / Edge)
     if (typeof window !== 'undefined' && !window.location.hostname.includes('github.io')) {
-      return `/api/proxy?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
+      return `/api/proxy?url=${encodeURIComponent(cleanTarget)}${refParam}${origParam}`;
     }
 
     // 3. Fallback for static GitHub Pages if local proxy detected
     if (typeof window !== 'undefined' && this.isLocalProxyAvailable) {
-      return `http://localhost:8080/?url=${encodeURIComponent(targetUrl)}${refParam}${origParam}`;
+      return `http://localhost:8080/?url=${encodeURIComponent(cleanTarget)}${refParam}${origParam}`;
     }
 
-    return targetUrl;
+    return cleanTarget;
   }
 
   /**

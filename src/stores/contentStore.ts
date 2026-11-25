@@ -247,9 +247,9 @@ export const useContentStore = create<ContentStoreState>((set, get) => ({
       const engine = ProviderEngine.getInstance();
       const metaPromise = engine.getMeta(activeProvider.value, link);
 
-      // 18-second safety timeout so multi-quality links and episode lists resolve cleanly
+      // 7-second safety timeout so UI never freezes on shimmer
       const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 18000)
+        setTimeout(() => resolve(null), 7000)
       );
 
       const detail = await Promise.race([metaPromise, timeoutPromise]);

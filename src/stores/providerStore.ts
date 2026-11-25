@@ -35,25 +35,72 @@ export const DEFAULT_SOURCES: ProviderSource[] = [
   },
 ];
 
-// Fallback manifests available instantly offline
-const DISALLOWED_PROVIDERS = new Set(['xvideos', 'pornhub', 'rule34video']);
+// Blacklisted providers (adult, dead domains, cloudflare-blocked, or non-working)
+export const DISALLOWED_PROVIDERS = new Set([
+  'xvideos',
+  'pornhub',
+  'rule34video',
+  '1cinevood', // dead domain (ENOTFOUND / 502)
+  'cinevood',
+  'kartoons', // requires account linking
+  'kartoons2', // empty
+  'internetarchive', // 400 error
+  'rareanimes', // empty
+  'torrentio', // empty / 404
+  'anikoto', // empty
+  'kickassanime', // empty
+  'animesub', // empty
+  'livetgtv', // invalid channel link
+  'netflixmirror', // Cloudflare 403 bot block on mobile
+  'primemirror', // Cloudflare 403 bot block on mobile
+  'disneymirror', // Cloudflare 403 bot block on mobile
+  'kisskh', // broken URL format
+  // All 27 disabled providers from Zenda manifest
+  'multi',
+  'world4u',
+  'protonmovies',
+  'cinemaluxe',
+  'filmyfly',
+  'moviebox',
+  'mkvdrama',
+  'kmmovies',
+  'katmoviefix',
+  'ringz',
+  'ogomovies',
+  'a111477',
+  'vadapav',
+  'moviesapi',
+  'ridomovies',
+  'flixhq',
+  'primewire',
+  'hianime',
+  'animetsu',
+  'tokyoinsider',
+  'dooflix',
+  'guardahd',
+  'skymoviehd',
+  'joya9tv',
+  'uniquestream',
+  'cinefreak',
+  'everything',
+]);
 
-// Fallback manifests available instantly offline (Strictly Official Zenda Providers)
+// Fallback manifests available instantly offline (Strictly Official, Verified Active Zenda Providers)
 const FALLBACK_MANIFESTS: ProviderManifest[] = [
   {
-    display_name: 'MultiStream',
-    value: 'autoEmbed',
-    version: '3.7',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
+    display_name: 'MovieBox Web',
+    value: 'movieBoxWeb',
+    version: '2.10',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/movieBoxWeb.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'VMovies',
-    value: 'vega',
-    version: '2.52',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/vega.png',
+    display_name: 'MultiStream',
+    value: 'autoEmbed',
+    version: '3.12',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/autoEmbed.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -77,15 +124,6 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'KatMovies',
-    value: 'katmovies',
-    version: '2.4',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/katmovies.png',
-    type: 'global',
-    disabled: false,
-    hasSettings: true,
-  },
-  {
     display_name: 'MoviesMod',
     value: 'mod',
     version: '2.0',
@@ -104,46 +142,91 @@ const FALLBACK_MANIFESTS: ProviderManifest[] = [
     hasSettings: true,
   },
   {
-    display_name: 'NetflixMirror',
-    value: 'netflixMirror',
-    version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/netflixMirror.png',
+    display_name: 'KatMoviesHd',
+    value: 'katmovies',
+    version: '2.4',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/katmovies.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'PrimeMirror',
-    value: 'primeMirror',
+    display_name: 'GokuHD',
+    value: 'gokuHD',
     version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/primeMirror.png',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/gokuHD.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'MultiMovies',
-    value: 'multi',
+    display_name: 'DramaCool',
+    value: 'dramacool',
     version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/multi.png',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/dramacool.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'World4uFree',
-    value: 'world4u',
+    display_name: 'ExtraFlix',
+    value: 'extraflix',
     version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/world4u.png',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/extraflix.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
   },
   {
-    display_name: 'Cinewood',
-    value: '1cinevood',
+    display_name: 'RogMovies',
+    value: 'luxMovies',
     version: '2.0',
-    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/1cinevood.png',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/luxMovies.png',
+    type: 'india',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'Castle TV',
+    value: 'castle',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/castle.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'AnimeWorld',
+    value: 'animeworld',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/animeworld.png',
+    type: 'anime',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: '1Flex',
+    value: '1flex',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/1flex.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'VMovies',
+    value: 'vega',
+    version: '2.52',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/vega.png',
+    type: 'global',
+    disabled: false,
+    hasSettings: true,
+  },
+  {
+    display_name: 'HdHub4u',
+    value: 'hdhub4u',
+    version: '2.0',
+    icon: 'https://cdn.jsdelivr.net/gh/Zenda-Cross/vega-providers@main/assets/hdhub4u.png',
     type: 'global',
     disabled: false,
     hasSettings: true,
@@ -208,7 +291,7 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
       if (customSourceUrl) {
         const rawManifests = await engine.loadManifest(customSourceUrl);
         const manifests = rawManifests.filter(
-          (m) => !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
+          (m) => !m.disabled && !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
         );
         const storedActive = useSettingsStore.getState().activeProviderValue;
         let active = manifests.find(
@@ -216,10 +299,10 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
         );
         if (!active) {
           active =
+            manifests.find((m) => m.value === 'movieBoxWeb' && !m.disabled) ||
             manifests.find((m) => m.value === 'autoEmbed' && !m.disabled) ||
-            manifests.find((m) => m.value === 'vega' && !m.disabled) ||
+            manifests.find((m) => m.value === 'drive' && !m.disabled) ||
             manifests.find((m) => !m.disabled) ||
-            manifests[0] ||
             FALLBACK_MANIFESTS[0];
         }
         set({
@@ -247,11 +330,15 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
       const allResults = await Promise.all(manifestPromises);
       const combined = allResults.flat();
 
-      // Deduplicate manifests by value and filter disallowed
+      // Deduplicate manifests by value, strictly filter disabled and disallowed
       const seen = new Set<string>();
       const mergedManifests: ProviderManifest[] = [];
       for (const m of combined) {
-        if (!seen.has(m.value) && !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())) {
+        if (
+          !seen.has(m.value) &&
+          !m.disabled &&
+          !DISALLOWED_PROVIDERS.has(m.value.toLowerCase())
+        ) {
           seen.add(m.value);
           mergedManifests.push(m);
         }
@@ -259,10 +346,10 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
 
       const finalManifests = mergedManifests.length > 0 ? mergedManifests : FALLBACK_MANIFESTS;
 
-      // Determine active provider: stored -> autoEmbed -> first non-disabled
+      // Determine active provider: stored -> movieBoxWeb -> autoEmbed -> drive -> first non-disabled
       let storedActive = useSettingsStore.getState().activeProviderValue;
       if (!storedActive || DISALLOWED_PROVIDERS.has(storedActive.toLowerCase())) {
-        storedActive = 'autoEmbed';
+        storedActive = 'movieBoxWeb';
       }
 
       let active = finalManifests.find(
@@ -270,10 +357,10 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
       );
       if (!active) {
         active =
+          finalManifests.find((m) => m.value === 'movieBoxWeb' && !m.disabled) ||
           finalManifests.find((m) => m.value === 'autoEmbed' && !m.disabled) ||
-          finalManifests.find((m) => m.value === 'vega' && !m.disabled) ||
+          finalManifests.find((m) => m.value === 'drive' && !m.disabled) ||
           finalManifests.find((m) => !m.disabled) ||
-          finalManifests[0] ||
           FALLBACK_MANIFESTS[0];
       }
 

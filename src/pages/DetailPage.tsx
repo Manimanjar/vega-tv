@@ -187,10 +187,13 @@ export const DetailPage: React.FC = () => {
   })();
 
   const handlePlay = (detail: typeof currentDetail, directLink?: string, episodeTitle?: string) => {
-    // If no direct link specified, use bestPlayable link (e.g. 1080p) or fallback to item link
-    const target = directLink || bestPlayable?.link || link;
+    // If series and no directLink, try to pick first episode
+    const seriesFirstEp = isSeries ? detail.linkList?.[0]?.directLinks?.[0] : null;
+    const target = directLink || bestPlayable?.link || seriesFirstEp?.link || link;
     const playTitle = episodeTitle
       ? `${detail.title} - ${episodeTitle}`
+      : seriesFirstEp && !directLink
+      ? `${detail.title} - ${seriesFirstEp.title || 'Episode 1'}`
       : bestPlayable && !directLink
       ? `${detail.title} (${bestPlayable.qualityLabel})`
       : detail.title;

@@ -66,10 +66,10 @@ export const SettingsPage: React.FC = () => {
   const handleExportData = () => {
     try {
       const data = {
-        settings: localStorage.getItem('vega_settings_v1'),
+        settings: localStorage.getItem('vega_settings_v5') || localStorage.getItem('vega_settings_v1'),
         history: localStorage.getItem('vega_watch_history_v1'),
         watchlist: localStorage.getItem('vega_watchlist_v1'),
-        sources: localStorage.getItem('vega_provider_sources_v1'),
+        sources: localStorage.getItem('vega_provider_sources_v6') || localStorage.getItem('vega_provider_sources_v1'),
         exportedAt: new Date().toISOString(),
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -95,10 +95,16 @@ export const SettingsPage: React.FC = () => {
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        if (json.settings) localStorage.setItem('vega_settings_v1', json.settings);
+        if (json.settings) {
+          localStorage.setItem('vega_settings_v5', json.settings);
+          localStorage.setItem('vega_settings_v1', json.settings);
+        }
         if (json.history) localStorage.setItem('vega_watch_history_v1', json.history);
         if (json.watchlist) localStorage.setItem('vega_watchlist_v1', json.watchlist);
-        if (json.sources) localStorage.setItem('vega_provider_sources_v1', json.sources);
+        if (json.sources) {
+          localStorage.setItem('vega_provider_sources_v6', json.sources);
+          localStorage.setItem('vega_provider_sources_v1', json.sources);
+        }
 
         showToast('Data restored! Reloading...', 'success');
         setTimeout(() => window.location.reload(), 1000);
@@ -506,12 +512,12 @@ export const SettingsPage: React.FC = () => {
           <div className="flex items-center justify-between pt-2 border-t border-white/5">
             <span className="font-semibold text-white">Provider Repository</span>
             <a
-              href="https://github.com/Manimanjar/vega-providers"
+              href="https://github.com/Zenda-Cross/vega-providers"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-vega-ctaPrimary hover:underline flex items-center gap-1"
             >
-              <span>GitHub / Manimanjar / vega-providers</span>
+              <span>GitHub / Zenda-Cross / vega-providers</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>

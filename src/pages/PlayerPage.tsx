@@ -39,19 +39,30 @@ export const PlayerPage: React.FC = () => {
       const resolved = await engine.getStream(provider, targetLink, type);
 
       if (!resolved || resolved.length === 0) {
-        if (targetLink.startsWith('http')) {
+        const isMediaUrl =
+          typeof targetLink === 'string' &&
+          (targetLink.startsWith('http://') || targetLink.startsWith('https://')) &&
+          !targetLink.startsWith('{') &&
+          !targetLink.endsWith('/') &&
+          !targetLink.endsWith('.html') &&
+          !targetLink.includes('/download-') &&
+          !targetLink.includes('/archives/') &&
+          !targetLink.includes('thenaukriadda') &&
+          (targetLink.includes('.m3u8') || targetLink.includes('.mp4') || targetLink.endsWith('.mkv') || targetLink.includes('.mkv?'));
+
+        if (isMediaUrl) {
           setStreams([
             {
-              server: 'Direct Link',
+              server: 'Direct Stream',
               link: targetLink,
-              type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
-              quality: 'Original',
+              type: targetLink.includes('m3u8') ? 'm3u8' : targetLink.includes('.mkv') ? 'mkv' : 'mp4',
+              quality: 'Direct',
             },
           ]);
           setIsLoading(false);
           return;
         }
-        throw new Error('No playable video streams returned by provider');
+        throw new Error('No playable video streams returned by provider for this title. Please return to Details and select an episode, or switch to MovieBox Web / MultiStream.');
       }
 
       // Prioritize high-speed native browser streams (HLS/MP4) first over raw MKV

@@ -48,8 +48,16 @@ export default async function handler(request) {
     );
   }
 
+  let cleanTargetUrl = targetUrl;
+  if (cleanTargetUrl.includes('hubcloud.cx')) {
+    cleanTargetUrl = cleanTargetUrl.replace('hubcloud.cx', 'hubcloud.mov');
+  }
+  if (cleanTargetUrl.includes('hubcloud.club')) {
+    cleanTargetUrl = cleanTargetUrl.replace('hubcloud.club', 'hubcloud.mov');
+  }
+
   try {
-    const parsedTarget = new URL(targetUrl);
+    const parsedTarget = new URL(cleanTargetUrl);
 
     // Build upstream request headers - strip all proxy and datacenter fingerprints
     const upstreamHeaders = new Headers();
@@ -108,7 +116,7 @@ export default async function handler(request) {
       upstreamHeaders.set('Range', range);
     }
 
-    const upstreamResponse = await fetch(targetUrl, {
+    const upstreamResponse = await fetch(cleanTargetUrl, {
       method: request.method,
       headers: upstreamHeaders,
       body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
@@ -133,13 +141,13 @@ export default async function handler(request) {
     const isM3u8 =
       contentType.includes('mpegurl') ||
       contentType.includes('application/x-mpegurl') ||
-      targetUrl.includes('.m3u8') ||
-      targetUrl.includes('m3u8');
+      cleanTargetUrl.includes('.m3u8') ||
+      cleanTargetUrl.includes('m3u8');
 
     if (isM3u8 && upstreamResponse.ok && request.method === 'GET') {
       const text = await upstreamResponse.text();
       if (text.includes('#EXTM3U')) {
-        const targetBase = new URL(targetUrl);
+        const targetBase = new URL(cleanTargetUrl);
         const refParam = customReferer ? `&referer=${encodeURIComponent(customReferer)}` : '';
         const origParam = customOrigin ? `&origin=${encodeURIComponent(customOrigin)}` : '';
         const proxyPath = reqUrl.pathname;

@@ -115,6 +115,45 @@ export class ProviderEngine {
           return this.dynamicUrls[providerValue].url;
         }
 
+        // Provider alias map for Zenda urls.json keys
+        const URL_ALIAS_MAP: Record<string, string> = {
+          mod: 'Moviesmod',
+          moviesmod: 'Moviesmod',
+          uhd: 'UhdMovies',
+          uhdmovies: 'UhdMovies',
+          netflixmirror: 'nfMirror',
+          primemirror: 'nfMirror',
+          disneymirror: 'nfMirror',
+          katmovies: 'kat',
+          katmoviehd: 'kat',
+          hdhub4u: 'hdhub',
+          hdhub: 'hdhub',
+          luxmovies: 'lux',
+          rogmovies: 'lux',
+          dramacool: 'dramacool',
+          asianc: 'dramacool',
+          movielinkdb: 'movielinkbd',
+          movielinkbd: 'movielinkbd',
+          extraflix: 'ExtraFlix',
+          rareanimes: 'RareAnimes',
+          vega: 'Vega',
+          vegamovies: 'Vega',
+          topmovies: 'Topmovies',
+          showbox: 'showbox',
+          kisskh: 'kissKh',
+          gokuhd: 'gokuHD',
+          eonmovies: 'eonMovies',
+          movieboxweb: 'movieBoxWeb',
+          moviezwap: 'moviezwap',
+          '4khdhub': '4khdhub',
+          drive: 'drive',
+        };
+
+        const aliasKey = URL_ALIAS_MAP[providerValue.toLowerCase()];
+        if (aliasKey && this.dynamicUrls[aliasKey]?.url) {
+          return this.dynamicUrls[aliasKey].url;
+        }
+
         // Case-insensitive lookup (e.g. Vega vs vega)
         const found = Object.entries(this.dynamicUrls).find(
           ([k]) => k.toLowerCase() === providerValue.toLowerCase()
@@ -126,15 +165,27 @@ export class ProviderEngine {
         // Static fallbacks for popular official Vega providers
         const staticBases: Record<string, string> = {
           autoembed: 'https://vidsrc.cc',
-          vega: 'https://vegamovies.lease',
-          drive: 'https://new3.moviesdrive.cyou/',
+          vega: 'https://vegamovies.latino',
+          drive: 'https://new4.moviesdrive.cyou/',
           kat: 'https://new.katmoviehd.top',
           katmovies: 'https://new.katmoviehd.top',
-          multi: 'https://m1.multimovies.courses',
-          w4u: 'https://world4ufree.vu',
-          hdhub: 'https://new14.hdhub4u.cl',
+          hdhub: 'https://new16.hdhub4u.cl',
+          hdhub4u: 'https://new16.hdhub4u.cl',
           '4khdhub': 'https://4khdhub.one',
-          mod: 'https://moviesmod.org.in',
+          mod: 'https://moviesmod.fi',
+          moviesmod: 'https://moviesmod.fi',
+          uhd: 'https://uhdmovies.ceo',
+          uhdmovies: 'https://uhdmovies.ceo',
+          movieboxweb: 'https://officialmoviebox.com',
+          gokuhd: 'https://gokuhd.nl',
+          netflixmirror: 'https://net77.cc',
+          primemirror: 'https://net77.cc',
+          dramacool: 'https://asianc.id',
+          showbox: 'https://www.showbox.media',
+          kisskh: 'https://kisskh.is',
+          extraflix: 'https://e14.extraflix.mobi',
+          topmovies: 'https://moviesleech.help',
+          luxmovies: 'https://rogmovies.beauty',
         };
 
         return staticBases[providerValue.toLowerCase()] || '';
@@ -568,8 +619,25 @@ export class ProviderEngine {
     const ctx = this.createContext(providerValue);
     const baseUrl = await ctx.getBaseUrl();
 
+    const targetLink =
+      link.startsWith('http') || link.startsWith('{')
+        ? link
+        : baseUrl
+        ? `${baseUrl.replace(/\/+$/, '')}/${link.replace(/^\/+/, '')}`
+        : link;
+
     if (loaded.metaFn) {
-      const meta = await loaded.metaFn(link, ctx);
+      let meta: any = null;
+      try {
+        meta = await loaded.metaFn(targetLink, ctx);
+      } catch (e1) {
+        if (targetLink !== link) {
+          try {
+            meta = await loaded.metaFn(link, ctx);
+          } catch {}
+        }
+      }
+
       if (meta && meta.title) {
         let image = meta.image || meta.poster || '';
         let poster = meta.poster || meta.image || '';
@@ -740,20 +808,31 @@ export class ProviderEngine {
       }
     }
 
-    // Direct fallback if absolute link or resolved link exists
+    // Direct fallback ONLY if targetLink is genuinely a media stream URL (not a webpage, HTML or JSON)
     const targetLink = resolvedLink.startsWith('http') ? resolvedLink : link;
-    if (targetLink.startsWith('http')) {
+    const isRealMediaStream =
+      typeof targetLink === 'string' &&
+      (targetLink.startsWith('http://') || targetLink.startsWith('https://')) &&
+      !targetLink.startsWith('{') &&
+      !targetLink.endsWith('/') &&
+      !targetLink.endsWith('.html') &&
+      !targetLink.includes('/download-') &&
+      !targetLink.includes('/archives/') &&
+      !targetLink.includes('thenaukriadda') &&
+      (targetLink.includes('.m3u8') || targetLink.includes('.mp4') || targetLink.endsWith('.mkv') || targetLink.includes('.mkv?'));
+
+    if (isRealMediaStream) {
       return [
         {
-          server: 'Direct CDN Stream (Fast)',
+          server: 'Direct Media Stream',
           link: targetLink,
-          type: targetLink.includes('m3u8') ? 'm3u8' : 'mp4',
-          quality: '1080',
+          type: targetLink.includes('.m3u8') ? 'm3u8' : targetLink.includes('.mkv') ? 'mkv' : 'mp4',
+          quality: 'Original',
         },
       ];
     }
 
-    throw new Error('No playable stream found for this item');
+    return [];
   }
 
   /**
