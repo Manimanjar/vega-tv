@@ -654,11 +654,18 @@ export class ProviderEngine {
             resolvedLinkList.map(async (group: any) => {
               if (group.episodesLink && (!group.directLinks || group.directLinks.length === 0)) {
                 try {
-                  const targetEpUrl = group.episodesLink.startsWith('http')
-                    ? group.episodesLink
-                    : baseUrl
-                    ? `${baseUrl.replace(/\/+$/, '')}/${group.episodesLink.replace(/^\/+/, '')}`
-                    : group.episodesLink;
+                  // episodesLink can be a JSON payload (e.g. MovieBox Web encodes
+                  // subjectId/detailPath/seasons as JSON), NOT a URL. Prepending
+                  // the base URL to a JSON string builds a garbage URL and the
+                  // episodes resolver returns 0 episodes, so series show no
+                  // episodes and Play does nothing. Pass JSON payloads through
+                  // unchanged, exactly like getStream/getMeta do for links.
+                  const targetEpUrl =
+                    group.episodesLink.startsWith('http') || group.episodesLink.startsWith('{')
+                      ? group.episodesLink
+                      : baseUrl
+                      ? `${baseUrl.replace(/\/+$/, '')}/${group.episodesLink.replace(/^\/+/, '')}`
+                      : group.episodesLink;
 
                   if (loaded.episodesFn) {
                     const eps = await loaded.episodesFn(targetEpUrl, ctx);
